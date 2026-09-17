@@ -189,17 +189,17 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_button,pattern=r"^a:"))
     app.add_handler(CallbackQueryHandler(user_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_router))
-    if os.getenv("RENDER"):
-    port = int(os.getenv("PORT", "10000"))
-    base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path="telegram",
-        webhook_url=f"{base_url}/telegram",
-    )
-else:
-    app.run_polling()
+    i   if os.getenv("RENDER"):
+        port = int(os.getenv("PORT", "10000"))
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="telegram",
+            webhook_url=f"{base_url}/telegram",
+        )
+    else:
+        app.run_polling()
 
 if __name__=="__main__":
     main()
