@@ -29,7 +29,8 @@ def init():
         price TEXT DEFAULT '询价',
         stock INTEGER DEFAULT 0,
         description TEXT DEFAULT '',
-        active INTEGER DEFAULT 1
+        photo_id TEXT DEFAULT '',
+active INTEGER DEFAULT 1
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS inquiries(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -207,5 +208,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-if __name__ == "__main__":
-    main()
+if __
