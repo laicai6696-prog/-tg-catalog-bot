@@ -189,7 +189,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_button,pattern=r"^a:"))
     app.add_handler(CallbackQueryHandler(user_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_router))
-    i   if os.getenv("RENDER"):
+        if os.getenv("RENDER"):
         port = int(os.getenv("PORT", "10000"))
         base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
         app.run_webhook(
