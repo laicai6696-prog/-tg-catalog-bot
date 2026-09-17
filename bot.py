@@ -181,15 +181,19 @@ async def text_router(update,ctx):
         await user_text(update,ctx)
 
 def main():
-    if not TOKEN: raise RuntimeError("请在 .env 设置 BOT_TOKEN")
+    if not TOKEN:
+        raise RuntimeError("请在 .env 设置 BOT_TOKEN")
+
     init()
-    app=Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start",start))
-    app.add_handler(CommandHandler("admin",admin))
-    app.add_handler(CallbackQueryHandler(admin_button,pattern=r"^a:"))
+
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CallbackQueryHandler(admin_button, pattern=r"^a:"))
     app.add_handler(CallbackQueryHandler(user_button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_router))
-        if os.getenv("RENDER"):
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
+
+    if os.getenv("RENDER"):
         port = int(os.getenv("PORT", "10000"))
         base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
         app.run_webhook(
@@ -201,5 +205,6 @@ def main():
     else:
         app.run_polling()
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
