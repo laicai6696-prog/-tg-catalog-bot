@@ -139,12 +139,78 @@ async def admin_button(update,ctx):
     if q.from_user.id not in ADMINS:
         await q.answer(); return
     await q.answer()
+
+    # 商品：先显示12个系列，不再一次性列出全部商品
     if q.data=="a:products":
-        c=db(); rows=c.execute("SELECT id,name,code,price,stock,active FROM products ORDER BY id DESC").fetchall(); c.close()
-        text="📦 商品列表\n\n" + "\n".join(
-            f"#{r['id']} {r['name']} [{r['code']}] | {r['price']} | 库存{r['stock']} | {'上架' if r['active'] else '下架'}"
-            for r in rows)
-        await q.message.reply_text(text[:4000])
+        c=db()
+        counts={}
+        for cat,name in CATS.items():
+            counts[cat]=c.execute(
+                "SELECT COUNT(*) n FROM products WHERE category=?",
+                (cat,)
+            ).fetchone()["n"]
+        c.close()
+
+        ks=list(CATS.items())
+        kb=[]
+        for i in range(0,12,2):
+            kb.append([
+                InlineKeyboardButton(
+                    f"{CATS[ks[i][0]]}（{counts[ks[i][0]]}）",
+                    callback_data=f"a:cat:{ks[i][0]}"
+                ),
+                InlineKeyboardButton(
+                    f"{CATS[ks[i+1][0]]}（{counts[ks[i+1][0]]}）",
+                    callback_data=f"a:cat:{ks[i+1][0]}"
+                )
+            ])
+        kb.append([InlineKeyboardButton("⬅️ 返回管理后台",callback_data="a:back")])
+        await q.message.edit_text(
+            "📦 商品管理\n\n请选择要查看的系列：",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+
+    # 点击某个系列后，只显示该系列商品
+    elif q.data.startswith("a:cat:"):
+        cat=q.data.split(":",2)[2]
+        if cat not in CATS:
+            return
+        c=db()
+        rows=c.execute(
+            "SELECT id,name,code,price,stock,active FROM products WHERE category=? ORDER BY id",
+            (cat,)
+        ).fetchall()
+        c.close()
+
+        if not rows:
+            text=f"📦 {CATS[cat]}\n\n暂无商品。"
+        else:
+            text=f"📦 {CATS[cat]}（{len(rows)}个）\n\n"
+            text += "\n".join(
+                f"#{r['id']} {r['name']}\n"
+                f"　{r['code']}｜¥{r['price']}｜库存{r['stock']}｜{'上架' if r['active'] else '下架'}"
+                for r in rows
+            )
+
+        kb=[[InlineKeyboardButton("⬅️ 返回系列列表",callback_data="a:products")]]
+        await q.message.edit_text(text[:4000],reply_markup=InlineKeyboardMarkup(kb))
+
+    # 返回管理后台
+    elif q.data=="a:back":
+        c=db()
+        p=c.execute("SELECT COUNT(*) n FROM products").fetchone()["n"]
+        a=c.execute("SELECT COUNT(*) n FROM products WHERE active=1").fetchone()["n"]
+        nq=c.execute("SELECT COUNT(*) n FROM inquiries WHERE status='new'").fetchone()["n"]
+        c.close()
+        kb=[[InlineKeyboardButton("📦 商品",callback_data="a:products")],
+            [InlineKeyboardButton("📩 询价",callback_data="a:inq")],
+            [InlineKeyboardButton("➕ 添加商品",callback_data="a:add")],
+            [InlineKeyboardButton("📥 批量导入CSV",callback_data="a:import")]]
+        await q.message.edit_text(
+            f"管理后台\n商品 {p}｜上架 {a}\n待处理询价 {nq}",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+
     elif q.data=="a:inq":
         c=db(); rows=c.execute("SELECT id,username,product,message,status,created_at FROM inquiries ORDER BY id DESC LIMIT 30").fetchall(); c.close()
         if not rows:
