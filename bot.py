@@ -88,7 +88,7 @@ async def user_button(update,ctx):
         r=c.execute("SELECT * FROM products WHERE id=? AND active=1",(pid,)).fetchone(); c.close()
         if not r:return
         kb=[[InlineKeyboardButton("📩 提交询价",callback_data=f"iq:{pid}")],
-            [InlineKeyboardButton("⬅️ 返回",callback_data=r["category"])]]
+            [InlineKeyboardButton("⬅️ 返回",callback_data=r["category"])] ]
         await q.message.reply_text(
             f"【{r['name']}】\n编号：{r['code']}\n价格：{r['price']}\n库存：{r['stock']}\n\n{r['description']}",
             reply_markup=InlineKeyboardMarkup(kb))
@@ -156,7 +156,9 @@ async def admin_button(update,ctx):
         await q.message.reply_text("按以下格式发送：\n名称|编号|分类(c1-c12)|价格|库存|描述")
     elif q.data=="a:import":
         ctx.user_data["admin_mode"]="import_csv"
-        await q.message.reply_text("请直接发送商品CSV文件。\n\n支持字段：id,name,code,category,price,price_type,stock,description,active\n\n导入时按 code 更新已有商品，不会重复创建同编号商品。")
+        await q.message.reply_text(
+            "请直接发送商品CSV文件。\n\n支持字段：id,name,code,category,price,price_type,stock,description,active\n\n导入时按 code 更新已有商品，不会重复创建同编号商品。"
+        )
 
 async def admin_text(update,ctx):
     if update.effective_user.id not in ADMINS:return
@@ -166,7 +168,7 @@ async def admin_text(update,ctx):
         await update.message.reply_text("格式错误，请按：名称|编号|分类|价格|库存|描述"); return
     name,code,cat,price,stock,desc=parts
     if cat not in CATS:
-        await update.message.reply_text("分类必须是 c1-c12，或直接填写系列名称"); return
+        await update.message.reply_text("分类必须是 c1-c12，或填写系列名称"); return
     try: stock=int(stock)
     except: await update.message.reply_text("库存必须是数字"); return
     c=db()
@@ -200,26 +202,40 @@ async def admin_document(update,ctx):
         return
     cat_by_name={v:k for k,v in CATS.items()}
     c=db(); added=updated=failed=0
+    # 清理原模板中的两个演示商品，避免首次导入后出现 95 个商品
+    c.execute("DELETE FROM products WHERE code IN ('A001','B001') AND name IN ('示例商品A','示例商品B')")
     for row in reader:
         try:
-            name=(row.get("name") or "").strip(); code=(row.get("code") or "").strip()
-            cat=(row.get("category") or "").strip(); price=(row.get("price") or "询价").strip()
-            stock=int((row.get("stock") or "0").strip()); desc=(row.get("description") or "").strip()
+            name=(row.get("name") or "").strip()
+            code=(row.get("code") or "").strip()
+            cat=(row.get("category") or "").strip()
+            price=(row.get("price") or "询价").strip()
+            stock=int((row.get("stock") or "0").strip())
+            desc=(row.get("description") or "").strip()
             active=1 if str(row.get("active") or "1").strip() not in ("0","下架","false","False") else 0
             cat=cat if cat in CATS else cat_by_name.get(cat,"")
-            if not name or not code or not cat: raise ValueError("名称、编号或分类为空")
+            if not name or not code or not cat:
+                raise ValueError("名称、编号或分类为空")
             old=c.execute("SELECT id FROM products WHERE code=?",(code,)).fetchone()
             if old:
-                c.execute("UPDATE products SET name=?,category=?,price=?,stock=?,description=?,active=? WHERE code=?",(name,cat,price,stock,desc,active,code)); updated+=1
+                c.execute(
+                    "UPDATE products SET name=?,category=?,price=?,stock=?,description=?,active=? WHERE code=?",
+                    (name,cat,price,stock,desc,active,code)
+                )
+                updated+=1
             else:
-                c.execute("INSERT INTO products(name,code,category,price,stock,description,active) VALUES(?,?,?,?,?,?,?)",(name,code,cat,price,stock,desc,active)); added+=1
+                c.execute(
+                    "INSERT INTO products(name,code,category,price,stock,description,active) VALUES(?,?,?,?,?,?,?)",
+                    (name,code,cat,price,stock,desc,active)
+                )
+                added+=1
         except Exception:
             failed+=1
     c.commit(); c.close(); ctx.user_data.clear()
     await update.message.reply_text(f"批量导入完成\n新增：{added}\n更新：{updated}\n失败：{failed}")
 
 async def text_router(update,ctx):
-    if update.effective_user.id in ADMINS and ctx.user_data.get("admin_mode")=="add":
+    if update.effective_user.id in ADMINS and ctx.user_data.get("admin_mode"):
         await admin_text(update,ctx)
     else:
         await user_text(update,ctx)
@@ -234,7 +250,21 @@ def main():
     app.add_handler(CallbackQueryHandler(user_button))
     app.add_handler(MessageHandler(filters.Document.ALL,admin_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_router))
-    app.run_polling()
+
+    # Render Web Service 使用 Webhook；本地运行时继续使用 Polling
+    if os.getenv("RENDER"):
+        port = int(os.getenv("PORT", "10000"))
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+        if not base_url:
+            raise RuntimeError("Render 环境缺少 RENDER_EXTERNAL_URL")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="telegram",
+            webhook_url=f"{base_url}/telegram"
+        )
+    else:
+        app.run_polling()
 
 if __name__=="__main__":
     main()
