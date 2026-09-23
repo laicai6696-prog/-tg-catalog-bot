@@ -1,7 +1,19 @@
-import os, sqlite3, logging, csv, io
+import os
+import sqlite3
+import logging
+import csv
+import io
+
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 load_dotenv()
 
@@ -14,10 +26,11 @@ ADMINS = {
 
 DB = "bot.db"
 
-# 你的机器人用户名
-BOT_USERNAME = "shangpinmulu2026_bot"
-
 logging.basicConfig(level=logging.INFO)
+
+# =========================
+# 12个商品系列
+# =========================
 
 CATS = {
     "c1": "和天下系列",
@@ -31,9 +44,12 @@ CATS = {
     "c9": "利群系列",
     "c10": "黄鹤楼系列",
     "c11": "中华系列",
-    "c12": "白皮系列"
+    "c12": "白皮系列",
 }
 
+# =========================
+# 数据库
+# =========================
 
 def db():
     c = sqlite3.connect(DB)
@@ -69,16 +85,16 @@ def init():
         )
     """)
 
+    # 只有数据库完全没有商品时，才添加示例商品
     if c.execute(
         "SELECT COUNT(*) n FROM products"
     ).fetchone()["n"] == 0:
 
         c.executemany(
             """
-            INSERT INTO products(
-                name,code,category,price,stock,description
-            )
-            VALUES(?,?,?,?,?,?)
+            INSERT INTO products
+            (name, code, category, price, stock, description)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -87,7 +103,7 @@ def init():
                     "c1",
                     "询价",
                     10,
-                    "商品介绍"
+                    "商品介绍",
                 ),
                 (
                     "示例商品B",
@@ -95,17 +111,22 @@ def init():
                     "c2",
                     "询价",
                     20,
-                    "商品介绍"
-                )
-            ]
+                    "商品介绍",
+                ),
+            ],
         )
 
     c.commit()
     c.close()
 
 
+# =========================
+# 用户首页
+# =========================
+
 def home():
     ks = list(CATS.items())
+
     rows = []
 
     for i in range(0, 12, 2):
@@ -117,66 +138,53 @@ def home():
             InlineKeyboardButton(
                 CATS[ks[i + 1][0]],
                 callback_data=ks[i + 1][0]
-            )
+            ),
         ])
 
-    rows.append([
-        InlineKeyboardButton(
-            "🔎 搜索",
-            callback_data="search"
-        ),
-        InlineKeyboardButton(
-            "📩 询价",
-            callback_data="inquiry"
-        )
-    ])
+    rows += [
+        [
+            InlineKeyboardButton(
+                "🔎 搜索",
+                callback_data="search"
+            ),
+            InlineKeyboardButton(
+                "📩 询价",
+                callback_data="inquiry"
+            ),
+        ]
+    ]
 
     return InlineKeyboardMarkup(rows)
 
 
-async def start(update, ctx):
+# =========================
+# /start
+# =========================
+
+async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
     ctx.user_data.clear()
 
     await update.message.reply_text(
-        "欢迎使用商品目录\n请选择分类：",
-        reply_markup=home()
-    )
-
-
-# =========================================================
-# 群里发布“查看商品目录”按钮
-# 管理员在群里发送 /post 即可
-# =========================================================
-
-async def post_catalog(update, ctx):
-
-    if update.effective_user.id not in ADMINS:
-        return
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "🛒 查看商品目录",
-                url=f"https://t.me/{BOT_USERNAME}"
-            )
-        ]
-    ])
-
-    await update.message.reply_text(
         "🛒 商品报价目录\n\n"
-        "点击下面按钮，进入商品目录查看全部商品：",
-        reply_markup=keyboard
+        "欢迎使用商品报价目录\n"
+        "请选择商品系列：",
+        reply_markup=home(),
     )
 
 
-# =========================================================
+# =========================
 # 用户按钮
-# =========================================================
+# =========================
 
-async def user_button(update, ctx):
+async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
     await q.answer()
+
+    # -------------------------
+    # 商品分类
+    # -------------------------
 
     if q.data in CATS:
 
@@ -184,25 +192,27 @@ async def user_button(update, ctx):
 
         rows = c.execute(
             """
-            SELECT id,name,price
+            SELECT id, name, price
             FROM products
-            WHERE category=? AND active=1
+            WHERE category = ?
+            AND active = 1
             ORDER BY id
             """,
-            (q.data,)
+            (q.data,),
         ).fetchall()
 
         c.close()
 
-        kb = [
-            [
+        kb = []
+
+        for r in rows:
+
+            kb.append([
                 InlineKeyboardButton(
                     f"{r['name']} · {r['price']}",
-                    callback_data=f"p:{r['id']}"
+                    callback_data=f"p:{r['id']}",
                 )
-            ]
-            for r in rows
-        ]
+            ])
 
         kb.append([
             InlineKeyboardButton(
@@ -213,31 +223,49 @@ async def user_button(update, ctx):
 
         await q.message.edit_text(
             f"【{CATS[q.data]}】",
-            reply_markup=InlineKeyboardMarkup(kb)
+            reply_markup=InlineKeyboardMarkup(kb),
         )
+
+    # -------------------------
+    # 首页
+    # -------------------------
 
     elif q.data == "home":
 
         await q.message.edit_text(
-            "请选择分类：",
-            reply_markup=home()
+            "🛒 商品报价目录\n\n"
+            "请选择商品系列：",
+            reply_markup=home(),
         )
+
+    # -------------------------
+    # 搜索
+    # -------------------------
 
     elif q.data == "search":
 
         ctx.user_data["mode"] = "search"
 
         await q.message.reply_text(
-            "请输入关键词："
+            "请输入商品名称或编号："
         )
+
+    # -------------------------
+    # 询价
+    # -------------------------
 
     elif q.data == "inquiry":
 
         ctx.user_data["mode"] = "inquiry"
+        ctx.user_data["product"] = ""
 
         await q.message.reply_text(
             "请输入商品、规格、数量或需求："
         )
+
+    # -------------------------
+    # 商品详情
+    # -------------------------
 
     elif q.data.startswith("p:"):
 
@@ -249,9 +277,10 @@ async def user_button(update, ctx):
             """
             SELECT *
             FROM products
-            WHERE id=? AND active=1
+            WHERE id = ?
+            AND active = 1
             """,
-            (pid,)
+            (pid,),
         ).fetchone()
 
         c.close()
@@ -271,7 +300,7 @@ async def user_button(update, ctx):
                     "⬅️ 返回",
                     callback_data=r["category"]
                 )
-            ]
+            ],
         ]
 
         await q.message.reply_text(
@@ -280,8 +309,12 @@ async def user_button(update, ctx):
             f"价格：{r['price']}\n"
             f"库存：{r['stock']}\n\n"
             f"{r['description']}",
-            reply_markup=InlineKeyboardMarkup(kb)
+            reply_markup=InlineKeyboardMarkup(kb),
         )
+
+    # -------------------------
+    # 商品询价
+    # -------------------------
 
     elif q.data.startswith("iq:"):
 
@@ -290,29 +323,45 @@ async def user_button(update, ctx):
         c = db()
 
         r = c.execute(
-            "SELECT name FROM products WHERE id=?",
-            (pid,)
+            """
+            SELECT name
+            FROM products
+            WHERE id = ?
+            """,
+            (pid,),
         ).fetchone()
 
         c.close()
 
         ctx.user_data["mode"] = "inquiry"
-        ctx.user_data["product"] = r["name"] if r else ""
+
+        ctx.user_data["product"] = (
+            r["name"] if r else ""
+        )
 
         await q.message.reply_text(
-            f"商品：{ctx.user_data['product']}\n"
-            f"请发送需求："
+            f"商品：{ctx.user_data['product']}\n\n"
+            "请发送你的需求，例如：\n"
+            "数量、规格、联系方式等"
         )
 
 
-# =========================================================
-# 用户文字
-# =========================================================
+# =========================
+# 用户文字消息
+# =========================
 
-async def user_text(update, ctx):
+async def user_text(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     text = update.message.text.strip()
+
     mode = ctx.user_data.get("mode")
+
+    # -------------------------
+    # 搜索
+    # -------------------------
 
     if mode == "search":
 
@@ -322,13 +371,19 @@ async def user_text(update, ctx):
 
         rows = c.execute(
             """
-            SELECT id,name,price
+            SELECT id, name, price
             FROM products
-            WHERE active=1
-            AND (name LIKE ? OR code LIKE ?)
+            WHERE active = 1
+            AND (
+                name LIKE ?
+                OR code LIKE ?
+            )
             LIMIT 30
             """,
-            (f"%{text}%", f"%{text}%")
+            (
+                f"%{text}%",
+                f"%{text}%",
+            ),
         ).fetchall()
 
         c.close()
@@ -337,29 +392,37 @@ async def user_text(update, ctx):
 
             await update.message.reply_text(
                 "没有找到结果。",
-                reply_markup=home()
+                reply_markup=home(),
             )
 
             return
 
-        kb = [
-            [
+        kb = []
+
+        for r in rows:
+
+            kb.append([
                 InlineKeyboardButton(
                     f"{r['name']} · {r['price']}",
-                    callback_data=f"p:{r['id']}"
+                    callback_data=f"p:{r['id']}",
                 )
-            ]
-            for r in rows
-        ]
+            ])
 
         await update.message.reply_text(
             "搜索结果：",
-            reply_markup=InlineKeyboardMarkup(kb)
+            reply_markup=InlineKeyboardMarkup(kb),
         )
+
+    # -------------------------
+    # 询价
+    # -------------------------
 
     elif mode == "inquiry":
 
-        product = ctx.user_data.get("product", "")
+        product = ctx.user_data.get(
+            "product",
+            ""
+        )
 
         u = update.effective_user
 
@@ -367,20 +430,16 @@ async def user_text(update, ctx):
 
         cur = c.execute(
             """
-            INSERT INTO inquiries(
-                user_id,
-                username,
-                product,
-                message
-            )
-            VALUES(?,?,?,?)
+            INSERT INTO inquiries
+            (user_id, username, product, message)
+            VALUES (?, ?, ?, ?)
             """,
             (
                 u.id,
                 u.username or "",
                 product,
-                text
-            )
+                text,
+            ),
         )
 
         iid = cur.lastrowid
@@ -391,8 +450,11 @@ async def user_text(update, ctx):
         ctx.user_data.clear()
 
         await update.message.reply_text(
-            f"询价已提交 #{iid}"
+            f"✅ 询价已提交 #{iid}\n\n"
+            "我们会尽快处理。"
         )
+
+        # 通知管理员
 
         for aid in ADMINS:
 
@@ -411,11 +473,14 @@ async def user_text(update, ctx):
                 pass
 
 
-# =========================================================
+# =========================
 # 管理后台
-# =========================================================
+# =========================
 
-async def admin(update, ctx):
+async def admin(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     if update.effective_user.id not in ADMINS:
         return
@@ -427,11 +492,19 @@ async def admin(update, ctx):
     ).fetchone()["n"]
 
     a = c.execute(
-        "SELECT COUNT(*) n FROM products WHERE active=1"
+        """
+        SELECT COUNT(*) n
+        FROM products
+        WHERE active = 1
+        """
     ).fetchone()["n"]
 
     q = c.execute(
-        "SELECT COUNT(*) n FROM inquiries WHERE status='new'"
+        """
+        SELECT COUNT(*) n
+        FROM inquiries
+        WHERE status = 'new'
+        """
     ).fetchone()["n"]
 
     c.close()
@@ -460,30 +533,40 @@ async def admin(update, ctx):
                 "📥 批量导入CSV",
                 callback_data="a:import"
             )
-        ]
+        ],
     ]
 
     await update.message.reply_text(
-        f"管理后台\n"
-        f"商品 {p}｜上架 {a}\n"
-        f"待处理询价 {q}",
-        reply_markup=InlineKeyboardMarkup(kb)
+        f"⚙️ 管理后台\n\n"
+        f"商品：{p}\n"
+        f"上架：{a}\n"
+        f"待处理询价：{q}",
+        reply_markup=InlineKeyboardMarkup(kb),
     )
 
 
-# =========================================================
+# =========================
 # 管理员按钮
-# =========================================================
+# =========================
 
-async def admin_button(update, ctx):
+async def admin_button(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     q = update.callback_query
 
     if q.from_user.id not in ADMINS:
+
         await q.answer()
+
         return
 
     await q.answer()
+
+    # -------------------------
+    # 商品管理
+    # -------------------------
 
     if q.data == "a:products":
 
@@ -497,9 +580,9 @@ async def admin_button(update, ctx):
                 """
                 SELECT COUNT(*) n
                 FROM products
-                WHERE category=?
+                WHERE category = ?
                 """,
-                (cat,)
+                (cat,),
             ).fetchone()["n"]
 
         c.close()
@@ -512,13 +595,15 @@ async def admin_button(update, ctx):
 
             kb.append([
                 InlineKeyboardButton(
-                    f"{CATS[ks[i][0]]}（{counts[ks[i][0]]}）",
-                    callback_data=f"a:cat:{ks[i][0]}"
+                    f"{CATS[ks[i][0]]}"
+                    f"（{counts[ks[i][0]]}）",
+                    callback_data=f"a:cat:{ks[i][0]}",
                 ),
                 InlineKeyboardButton(
-                    f"{CATS[ks[i + 1][0]]}（{counts[ks[i + 1][0]]}）",
-                    callback_data=f"a:cat:{ks[i + 1][0]}"
-                )
+                    f"{CATS[ks[i + 1][0]]}"
+                    f"（{counts[ks[i + 1][0]]}）",
+                    callback_data=f"a:cat:{ks[i + 1][0]}",
+                ),
             ])
 
         kb.append([
@@ -531,8 +616,12 @@ async def admin_button(update, ctx):
         await q.message.edit_text(
             "📦 商品管理\n\n"
             "请选择要查看的系列：",
-            reply_markup=InlineKeyboardMarkup(kb)
+            reply_markup=InlineKeyboardMarkup(kb),
         )
+
+    # -------------------------
+    # 查看某个系列
+    # -------------------------
 
     elif q.data.startswith("a:cat:"):
 
@@ -545,12 +634,12 @@ async def admin_button(update, ctx):
 
         rows = c.execute(
             """
-            SELECT id,name,code,price,stock,active
+            SELECT id, name, code, price, stock, active
             FROM products
-            WHERE category=?
+            WHERE category = ?
             ORDER BY id
             """,
-            (cat,)
+            (cat,),
         ).fetchall()
 
         c.close()
@@ -565,12 +654,15 @@ async def admin_button(update, ctx):
         else:
 
             text = (
-                f"📦 {CATS[cat]}（{len(rows)}个）\n\n"
+                f"📦 {CATS[cat]}"
+                f"（{len(rows)}个）\n\n"
             )
 
             text += "\n".join(
                 f"#{r['id']} {r['name']}\n"
-                f"　{r['code']}｜¥{r['price']}｜库存{r['stock']}｜"
+                f"　{r['code']}｜"
+                f"¥{r['price']}｜"
+                f"库存{r['stock']}｜"
                 f"{'上架' if r['active'] else '下架'}"
                 for r in rows
             )
@@ -584,8 +676,12 @@ async def admin_button(update, ctx):
 
         await q.message.edit_text(
             text[:4000],
-            reply_markup=InlineKeyboardMarkup(kb)
+            reply_markup=InlineKeyboardMarkup(kb),
         )
+
+    # -------------------------
+    # 返回管理后台
+    # -------------------------
 
     elif q.data == "a:back":
 
@@ -596,11 +692,19 @@ async def admin_button(update, ctx):
         ).fetchone()["n"]
 
         a = c.execute(
-            "SELECT COUNT(*) n FROM products WHERE active=1"
+            """
+            SELECT COUNT(*) n
+            FROM products
+            WHERE active = 1
+            """
         ).fetchone()["n"]
 
         nq = c.execute(
-            "SELECT COUNT(*) n FROM inquiries WHERE status='new'"
+            """
+            SELECT COUNT(*) n
+            FROM inquiries
+            WHERE status = 'new'
+            """
         ).fetchone()["n"]
 
         c.close()
@@ -629,15 +733,20 @@ async def admin_button(update, ctx):
                     "📥 批量导入CSV",
                     callback_data="a:import"
                 )
-            ]
+            ],
         ]
 
         await q.message.edit_text(
-            f"管理后台\n"
-            f"商品 {p}｜上架 {a}\n"
-            f"待处理询价 {nq}",
-            reply_markup=InlineKeyboardMarkup(kb)
+            f"⚙️ 管理后台\n\n"
+            f"商品：{p}\n"
+            f"上架：{a}\n"
+            f"待处理询价：{nq}",
+            reply_markup=InlineKeyboardMarkup(kb),
         )
+
+    # -------------------------
+    # 询价管理
+    # -------------------------
 
     elif q.data == "a:inq":
 
@@ -645,7 +754,13 @@ async def admin_button(update, ctx):
 
         rows = c.execute(
             """
-            SELECT id,username,product,message,status,created_at
+            SELECT
+                id,
+                username,
+                product,
+                message,
+                status,
+                created_at
             FROM inquiries
             ORDER BY id DESC
             LIMIT 30
@@ -663,10 +778,12 @@ async def admin_button(update, ctx):
             return
 
         text = "\n\n".join(
-            f"#{r['id']} @{r['username'] or '未设置'}\n"
+            f"#{r['id']} "
+            f"@{r['username'] or '未设置'}\n"
             f"商品：{r['product']}\n"
             f"{r['message']}\n"
-            f"[{r['status']}] {r['created_at']}"
+            f"[{r['status']}] "
+            f"{r['created_at']}"
             for r in rows
         )
 
@@ -674,34 +791,47 @@ async def admin_button(update, ctx):
             text[:4000]
         )
 
+    # -------------------------
+    # 添加商品
+    # -------------------------
+
     elif q.data == "a:add":
 
         ctx.user_data["admin_mode"] = "add"
 
         await q.message.reply_text(
-            "按以下格式发送：\n"
-            "名称|编号|分类(c1-c12)|价格|库存|描述"
+            "按以下格式发送：\n\n"
+            "名称|编号|分类(c1-c12)|价格|库存|描述\n\n"
+            "例如：\n"
+            "测试商品|P001|c1|350|10|商品介绍"
         )
+
+    # -------------------------
+    # CSV导入
+    # -------------------------
 
     elif q.data == "a:import":
 
         ctx.user_data["admin_mode"] = "import_csv"
 
         await q.message.reply_text(
-            "请直接发送商品CSV文件。\n\n"
-            "支持字段："
-            "id,name,code,category,price,price_type,stock,"
-            "description,active\n\n"
+            "📥 请直接发送商品CSV文件。\n\n"
+            "支持字段：\n"
+            "id,name,code,category,price,"
+            "price_type,stock,description,active\n\n"
             "导入时按 code 更新已有商品，"
             "不会重复创建同编号商品。"
         )
 
 
-# =========================================================
-# 管理员文字
-# =========================================================
+# =========================
+# 管理员添加商品
+# =========================
 
-async def admin_text(update, ctx):
+async def admin_text(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     if update.effective_user.id not in ADMINS:
         return
@@ -717,7 +847,7 @@ async def admin_text(update, ctx):
     if len(parts) != 6:
 
         await update.message.reply_text(
-            "格式错误，请按："
+            "格式错误，请按：\n"
             "名称|编号|分类|价格|库存|描述"
         )
 
@@ -725,22 +855,35 @@ async def admin_text(update, ctx):
 
     name, code, cat, price, stock, desc = parts
 
+    # 支持分类编号
+    # 也支持直接填写系列名称
+
+    cat_by_name = {
+        v: k
+        for k, v in CATS.items()
+    }
+
     if cat not in CATS:
 
+        cat = cat_by_name.get(cat, "")
+
+    if not cat:
+
         await update.message.reply_text(
-            "分类必须是 c1-c12，"
-            "或填写系列名称"
+            "分类必须填写 c1-c12，"
+            "或者直接填写系列名称。"
         )
 
         return
 
     try:
+
         stock = int(stock)
 
     except:
 
         await update.message.reply_text(
-            "库存必须是数字"
+            "库存必须是数字。"
         )
 
         return
@@ -751,15 +894,9 @@ async def admin_text(update, ctx):
 
         c.execute(
             """
-            INSERT INTO products(
-                name,
-                code,
-                category,
-                price,
-                stock,
-                description
-            )
-            VALUES(?,?,?,?,?,?)
+            INSERT INTO products
+            (name, code, category, price, stock, description)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 name,
@@ -767,20 +904,20 @@ async def admin_text(update, ctx):
                 cat,
                 price,
                 stock,
-                desc
-            )
+                desc,
+            ),
         )
 
         c.commit()
 
         await update.message.reply_text(
-            "商品已添加。"
+            "✅ 商品已添加。"
         )
 
     except sqlite3.IntegrityError:
 
         await update.message.reply_text(
-            "编号已存在。"
+            "❌ 编号已存在。"
         )
 
     finally:
@@ -790,11 +927,14 @@ async def admin_text(update, ctx):
     ctx.user_data.clear()
 
 
-# =========================================================
-# CSV批量导入
-# =========================================================
+# =========================
+# CSV导入
+# =========================
 
-async def admin_document(update, ctx):
+async def admin_document(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     if update.effective_user.id not in ADMINS:
         return
@@ -804,7 +944,10 @@ async def admin_document(update, ctx):
 
     doc = update.message.document
 
-    if not doc or not doc.file_name.lower().endswith(".csv"):
+    if not doc:
+        return
+
+    if not doc.file_name.lower().endswith(".csv"):
 
         await update.message.reply_text(
             "请发送 .csv 文件。"
@@ -836,7 +979,7 @@ async def admin_document(update, ctx):
         "code",
         "category",
         "price",
-        "stock"
+        "stock",
     }
 
     if not required.issubset(
@@ -844,7 +987,7 @@ async def admin_document(update, ctx):
     ):
 
         await update.message.reply_text(
-            "CSV字段不完整，需要至少包含："
+            "CSV字段不完整，需要至少包含：\n"
             "name, code, category, price, stock"
         )
 
@@ -861,7 +1004,7 @@ async def admin_document(update, ctx):
     updated = 0
     failed = 0
 
-    # 删除最初的两个演示商品
+    # 删除以前的示例商品
     c.execute(
         """
         DELETE FROM products
@@ -887,26 +1030,38 @@ async def admin_document(update, ctx):
             ).strip()
 
             price = (
-                row.get("price") or "询价"
+                row.get("price")
+                or "询价"
             ).strip()
 
             stock = int(
-                (row.get("stock") or "0").strip()
+                (
+                    row.get("stock")
+                    or "0"
+                ).strip()
             )
 
             desc = (
-                row.get("description") or ""
+                row.get("description")
+                or ""
             ).strip()
 
-            active = 1 if str(
-                row.get("active") or "1"
-            ).strip() not in (
-                "0",
-                "下架",
-                "false",
-                "False"
-            ) else 0
+            active = (
+                1
+                if str(
+                    row.get("active")
+                    or "1"
+                ).strip()
+                not in (
+                    "0",
+                    "下架",
+                    "false",
+                    "False",
+                )
+                else 0
+            )
 
+            # 如果填写系列名称，转换成c1-c12
             cat = (
                 cat
                 if cat in CATS
@@ -919,8 +1074,12 @@ async def admin_document(update, ctx):
                 )
 
             old = c.execute(
-                "SELECT id FROM products WHERE code=?",
-                (code,)
+                """
+                SELECT id
+                FROM products
+                WHERE code = ?
+                """,
+                (code,),
             ).fetchone()
 
             if old:
@@ -928,13 +1087,14 @@ async def admin_document(update, ctx):
                 c.execute(
                     """
                     UPDATE products
-                    SET name=?,
-                        category=?,
-                        price=?,
-                        stock=?,
-                        description=?,
-                        active=?
-                    WHERE code=?
+                    SET
+                        name = ?,
+                        category = ?,
+                        price = ?,
+                        stock = ?,
+                        description = ?,
+                        active = ?
+                    WHERE code = ?
                     """,
                     (
                         name,
@@ -943,8 +1103,8 @@ async def admin_document(update, ctx):
                         stock,
                         desc,
                         active,
-                        code
-                    )
+                        code,
+                    ),
                 )
 
                 updated += 1
@@ -953,7 +1113,8 @@ async def admin_document(update, ctx):
 
                 c.execute(
                     """
-                    INSERT INTO products(
+                    INSERT INTO products
+                    (
                         name,
                         code,
                         category,
@@ -962,7 +1123,7 @@ async def admin_document(update, ctx):
                         description,
                         active
                     )
-                    VALUES(?,?,?,?,?,?,?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         name,
@@ -971,8 +1132,8 @@ async def admin_document(update, ctx):
                         price,
                         stock,
                         desc,
-                        active
-                    )
+                        active,
+                    ),
                 )
 
                 added += 1
@@ -987,18 +1148,50 @@ async def admin_document(update, ctx):
     ctx.user_data.clear()
 
     await update.message.reply_text(
-        f"批量导入完成\n"
+        f"✅ 批量导入完成\n\n"
         f"新增：{added}\n"
         f"更新：{updated}\n"
         f"失败：{failed}"
     )
 
 
-# =========================================================
-# 文字路由
-# =========================================================
+# =========================
+# 群里发布商品目录按钮
+# =========================
 
-async def text_router(update, ctx):
+async def post_catalog(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
+    # 只有管理员可以发布
+    if update.effective_user.id not in ADMINS:
+        return
+
+    keyboard = [[
+        InlineKeyboardButton(
+            "🛒 查看商品目录",
+            url="https://t.me/shangpinmulu2026_bot?start=catalog"
+        )
+    ]]
+
+    await update.message.reply_text(
+        "🛒 商品报价目录\n\n"
+        "点击下面按钮，进入商品目录查看全部商品：",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
+    )
+
+
+# =========================
+# 文字消息路由
+# =========================
+
+async def text_router(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     if (
         update.effective_user.id in ADMINS
@@ -1018,13 +1211,14 @@ async def text_router(update, ctx):
         )
 
 
-# =========================================================
+# =========================
 # 主程序
-# =========================================================
+# =========================
 
 def main():
 
     if not TOKEN:
+
         raise RuntimeError(
             "请在 .env 设置 BOT_TOKEN"
         )
@@ -1038,7 +1232,7 @@ def main():
         .build()
     )
 
-    # 普通功能
+    # 用户
     app.add_handler(
         CommandHandler(
             "start",
@@ -1046,6 +1240,7 @@ def main():
         )
     )
 
+    # 管理后台
     app.add_handler(
         CommandHandler(
             "admin",
@@ -1053,7 +1248,7 @@ def main():
         )
     )
 
-    # 新增：群里发送 /post 发布商品目录按钮
+    # 群里发布商品目录按钮
     app.add_handler(
         CommandHandler(
             "post",
@@ -1076,7 +1271,7 @@ def main():
         )
     )
 
-    # CSV
+    # CSV文件
     app.add_handler(
         MessageHandler(
             filters.Document.ALL,
@@ -1092,7 +1287,7 @@ def main():
         )
     )
 
-    # Render Webhook
+    # Render
     if os.getenv("RENDER"):
 
         port = int(
@@ -1102,27 +1297,38 @@ def main():
             )
         )
 
-        base_url = os.getenv(
-            "RENDER_EXTERNAL_URL",
-            ""
-        ).rstrip("/")
+        base_url = (
+            os.getenv(
+                "RENDER_EXTERNAL_URL",
+                ""
+            )
+            .rstrip("/")
+        )
 
         if not base_url:
+
             raise RuntimeError(
-                "Render 环境缺少 RENDER_EXTERNAL_URL"
+                "Render 环境缺少 "
+                "RENDER_EXTERNAL_URL"
             )
 
         app.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="telegram",
-            webhook_url=f"{base_url}/telegram"
+            webhook_url=(
+                f"{base_url}/telegram"
+            ),
         )
 
     else:
 
         app.run_polling()
 
+
+# =========================
+# 启动
+# =========================
 
 if __name__ == "__main__":
     main()
