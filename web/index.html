@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品目录</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #f5f5f5;
+            font-family: Arial, sans-serif;
+            color: #222;
+        }
+
+        .header {
+            background: #ffffff;
+            padding: 18px 16px 12px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+
+        .search {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        .categories {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 12px 16px;
+            background: #fff;
+        }
+
+        .category {
+            flex-shrink: 0;
+            border: 0;
+            padding: 8px 14px;
+            border-radius: 20px;
+            background: #eee;
+        }
+
+        .category.active {
+            background: #0088cc;
+            color: white;
+        }
+
+        .products {
+            padding: 12px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .product {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .product img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: cover;
+            background: #eee;
+        }
+
+        .product-info {
+            padding: 10px;
+        }
+
+        .product-name {
+            font-size: 15px;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        .price {
+            color: #e53935;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .stock {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        .empty {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    <div class="title">商品目录</div>
+
+    <input
+        id="search"
+        class="search"
+        placeholder="搜索商品名称或编号"
+    >
+</div>
+
+<div class="categories">
+    <button class="category active">全部</button>
+    <button class="category">和天下</button>
+    <button class="category">熊猫</button>
+    <button class="category">南京</button>
+    <button class="category">荷花</button>
+    <button class="category">芙蓉王</button>
+    <button class="category">牡丹</button>
+</div>
+
+<div id="products" class="products"></div>
+
+<script>
+
+const products = [
+    {
+        name: "软和天下",
+        code: "HT001",
+        price: "¥350",
+        stock: 20,
+        category: "和天下",
+        image: ""
+    },
+    {
+        name: "细支青和天下",
+        code: "HT002",
+        price: "¥340",
+        stock: 15,
+        category: "和天下",
+        image: ""
+    },
+    {
+        name: "细支和天下",
+        code: "HT003",
+        price: "¥340",
+        stock: 10,
+        category: "和天下",
+        image: ""
+    },
+    {
+        name: "硬和天下",
+        code: "HT004",
+        price: "¥350",
+        stock: 12,
+        category: "和天下",
+        image: ""
+    }
+];
+
+let currentCategory = "全部";
+
+function showProducts() {
+
+    const keyword =
+        document.getElementById("search").value
+        .trim()
+        .toLowerCase();
+
+    const container =
+        document.getElementById("products");
+
+    const result = products.filter(product => {
+
+        const categoryOK =
+            currentCategory === "全部" ||
+            product.category === currentCategory;
+
+        const searchOK =
+            product.name.toLowerCase().includes(keyword) ||
+            product.code.toLowerCase().includes(keyword);
+
+        return categoryOK && searchOK;
+    });
+
+    container.innerHTML = "";
+
+    if (result.length === 0) {
+        container.innerHTML =
+            '<div class="empty">没有找到商品</div>';
+        return;
+    }
+
+    result.forEach(product => {
+
+        const image =
+            product.image ||
+            "https://via.placeholder.com/500?text=商品图片";
+
+        container.innerHTML += `
+            <div class="product">
+                <img src="${image}">
+                <div class="product-info">
+                    <div class="product-name">
+                        ${product.name}
+                    </div>
+
+                    <div>
+                        编号：${product.code}
+                    </div>
+
+                    <div class="price">
+                        ${product.price}
+                    </div>
+
+                    <div class="stock">
+                        库存：${product.stock}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+}
+
+document
+    .getElementById("search")
+    .addEventListener("input", showProducts);
+
+document
+    .querySelectorAll(".category")
+    .forEach(button => {
+
+        button.addEventListener("click", () => {
+
+            document
+                .querySelectorAll(".category")
+                .forEach(b => b.classList.remove("active"));
+
+            button.classList.add("active");
+
+            currentCategory = button.innerText;
+
+            showProducts();
+        });
+    });
+
+showProducts();
+
+</script>
+
+</body>
+</html>
