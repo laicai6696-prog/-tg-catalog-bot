@@ -2,1504 +2,860 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <meta name="theme-color" content="#111111">
     <title>商品目录</title>
-
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-    <style>
-        * {
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-            background: #f5f5f5;
-            color: #222;
-            font-family:
-                -apple-system,
-                BlinkMacSystemFont,
-                "Segoe UI",
-                "PingFang SC",
-                "Microsoft YaHei",
-                sans-serif;
-        }
-
-        .app {
-            max-width: 700px;
-            margin: 0 auto;
-            min-height: 100vh;
-        }
-
-        /* 顶部 */
-        .header {
-            position: sticky;
-            top: 0;
-            z-index: 20;
-            background: #ffffff;
-            padding: 14px 15px 10px;
-            border-bottom: 1px solid #eeeeee;
-        }
-
-        .title {
-            font-size: 22px;
-            font-weight: 700;
-            margin-bottom: 12px;
-        }
-
-        /* 搜索 */
-        .search-box {
-            position: relative;
-        }
-
-        .search-box input {
-            width: 100%;
-            height: 42px;
-            border: 1px solid #dddddd;
-            border-radius: 22px;
-            padding: 0 18px;
-            font-size: 15px;
-            outline: none;
-            background: #f7f7f7;
-        }
-
-        .search-box input:focus {
-            border-color: #999999;
-            background: #ffffff;
-        }
-
-        /* 分类 */
-        .categories {
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
-            padding: 10px 15px;
-            background: #ffffff;
-            border-bottom: 1px solid #eeeeee;
-            scrollbar-width: none;
-            position: sticky;
-            top: 89px;
-            z-index: 15;
-        }
-
-        .categories::-webkit-scrollbar {
-            display: none;
-        }
-
-        .category-btn {
-            flex: 0 0 auto;
-            border: 1px solid #dddddd;
-            background: #ffffff;
-            color: #555555;
-            border-radius: 18px;
-            padding: 7px 14px;
-            font-size: 14px;
-            white-space: nowrap;
-        }
-
-        .category-btn.active {
-            background: #222222;
-            color: #ffffff;
-            border-color: #222222;
-        }
-
-        /* 商品区域 */
-        .content {
-            padding: 12px;
-        }
-
-        .status {
-            font-size: 13px;
-            color: #888888;
-            margin: 2px 4px 12px;
-        }
-
-        .products {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        /* 商品卡片 */
-        .product-card {
-            background: #ffffff;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 1px 5px rgba(0,0,0,0.06);
-            cursor: pointer;
-        }
-
-        .product-image {
-            width: 100%;
-            aspect-ratio: 1 / 1;
-            background: #eeeeee;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .product-image img {
-            width: 100%;
-            height: 100%;
-            display: block;
-            object-fit: cover;
-        }
-
-        .image-placeholder {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #999999;
-            font-size: 14px;
-            background: #eeeeee;
-        }
-
-        .product-info {
-            padding: 10px;
-        }
-
-        .product-name {
-            font-size: 15px;
-            font-weight: 600;
-            line-height: 1.4;
-            min-height: 42px;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        .product-code {
-            margin-top: 5px;
-            color: #999999;
-            font-size: 12px;
-        }
-
-        .product-bottom {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 5px;
-            margin-top: 8px;
-        }
-
-        .price {
-            font-size: 15px;
-            font-weight: 700;
-        }
-
-        .stock {
-            color: #888888;
-            font-size: 12px;
-        }
-
-        /* 没有商品 */
-        .empty {
-            text-align: center;
-            padding: 60px 20px;
-            color: #999999;
-            font-size: 15px;
-        }
-
-        /* 加载 */
-        .loading {
-            text-align: center;
-            padding: 60px 20px;
-            color: #888888;
-        }
-
-        /* 弹窗 */
-        .modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.55);
-            display: none;
-            align-items: flex-end;
-            justify-content: center;
-            z-index: 100;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-box {
-            width: 100%;
-            max-width: 700px;
-            max-height: 90vh;
-            overflow-y: auto;
-            background: #ffffff;
-            border-radius: 18px 18px 0 0;
-            padding: 18px;
-            animation: slideUp 0.2s ease;
-        }
-
-        @keyframes slideUp {
-            from {
-                transform: translateY(100%);
-            }
-            to {
-                transform: translateY(0);
-            }
-        }
-
-        .modal-close {
-            float: right;
-            width: 34px;
-            height: 34px;
-            border: none;
-            border-radius: 50%;
-            background: #eeeeee;
-            font-size: 20px;
-        }
-
-        .detail-image {
-            width: 100%;
-            max-height: 380px;
-            object-fit: contain;
-            border-radius: 12px;
-            background: #f3f3f3;
-            margin-bottom: 15px;
-        }
-
-        .detail-name {
-            font-size: 22px;
-            font-weight: 700;
-            margin: 5px 40px 10px 0;
-        }
-
-        .detail-row {
-            padding: 8px 0;
-            border-bottom: 1px solid #eeeeee;
-            font-size: 14px;
-        }
-
-        .detail-label {
-            color: #888888;
-            margin-right: 8px;
-        }
-
-        .detail-description {
-            margin-top: 15px;
-            color: #555555;
-            line-height: 1.7;
-            white-space: pre-wrap;
-        }
-
-        /* 按钮 */
-        .main-btn {
-            width: 100%;
-            height: 46px;
-            margin-top: 18px;
-            border: none;
-            border-radius: 10px;
-            background: #222222;
-            color: #ffffff;
-            font-size: 16px;
-            font-weight: 600;
-        }
-
-        .main-btn:active {
-            opacity: 0.8;
-        }
-
-        /* 表单 */
-        .form-title {
-            font-size: 20px;
-            font-weight: 700;
-            margin: 5px 40px 18px 0;
-        }
-
-        .form-label {
-            display: block;
-            font-size: 14px;
-            color: #555555;
-            margin: 12px 0 6px;
-        }
-
-        .form-input,
-        .form-textarea {
-            width: 100%;
-            border: 1px solid #dddddd;
-            border-radius: 9px;
-            padding: 11px;
-            font-size: 15px;
-            outline: none;
-            font-family: inherit;
-        }
-
-        .form-textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
-
-        /* 提示 */
-        .toast {
-            position: fixed;
-            left: 50%;
-            bottom: 35px;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.8);
-            color: #ffffff;
-            padding: 10px 18px;
-            border-radius: 20px;
-            font-size: 14px;
-            z-index: 300;
-            display: none;
-            max-width: 85%;
-            text-align: center;
-        }
-
-        .toast.show {
-            display: block;
-        }
-
-        @media (max-width: 380px) {
-            .products {
-                gap: 8px;
-            }
-
-            .content {
-                padding: 8px;
-            }
-
-            .product-info {
-                padding: 8px;
-            }
-
-            .product-name {
-                font-size: 14px;
-            }
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="app">
-
-    <!-- 顶部 -->
-    <div class="header">
-        <div class="title">商品目录</div>
-
-        <div class="search-box">
-            <input
-                id="searchInput"
-                type="search"
-                placeholder="搜索商品名称、编号..."
-                autocomplete="off"
-            >
-        </div>
-    </div>
-
-    <!-- 分类 -->
-    <div id="categories" class="categories">
-        <button class="category-btn active" data-category="all">
-            全部
-        </button>
-    </div>
-
-    <!-- 商品 -->
-    <div class="content">
-
-        <div id="status" class="status">
-            正在加载商品...
-        </div>
-
-        <div id="products" class="products"></div>
-
-        <div id="empty" class="empty" style="display:none;">
-            没有找到商品
-        </div>
-
-        <div id="loading" class="loading" style="display:none;">
-            正在加载...
-        </div>
-
-    </div>
-</div>
-
-
-<!-- 商品详情弹窗 -->
-<div id="detailModal" class="modal">
-
-    <div class="modal-box">
-
-        <button class="modal-close" onclick="closeDetail()">
-            ×
-        </button>
-
-        <div id="detailContent"></div>
-
-    </div>
-</div>
-
-
-<!-- 询价弹窗 -->
-<div id="inquiryModal" class="modal">
-
-    <div class="modal-box">
-
-        <button class="modal-close" onclick="closeInquiry()">
-            ×
-        </button>
-
-        <div class="form-title">
-            商品询价
-        </div>
-
-        <div id="inquiryProductName"
-             style="font-size:15px;color:#555;margin-bottom:15px;">
-        </div>
-
-        <label class="form-label">
-            联系方式
-        </label>
-
-        <input
-            id="contactInput"
-            class="form-input"
-            type="text"
-            placeholder="请输入微信/手机号/Telegram"
-        >
-
-        <label class="form-label">
-            询价内容
-        </label>
-
-        <textarea
-            id="messageInput"
-            class="form-textarea"
-            placeholder="请输入您的需求，例如：需要10件，请报价"
-        ></textarea>
-
-        <button
-            class="main-btn"
-            onclick="submitInquiry()">
-            提交询价
-        </button>
-
-    </div>
-</div>
-
-
-<!-- 提示 -->
-<div id="toast" class="toast"></div>
-
-
-<script>
-
-    /* =========================
-       Telegram 小程序初始化
-    ========================= */
-
-    let tg = null;
-
-    if (window.Telegram && window.Telegram.WebApp) {
-
-        tg = window.Telegram.WebApp;
-
-        tg.ready();
-
-        tg.expand();
-
-        try {
-            tg.enableClosingConfirmation();
-        } catch (e) {}
-
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+    * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
     }
-
-
-    /* =========================
-       全局变量
-    ========================= */
-
-    let allProducts = [];
-
-    let currentCategory = "all";
-
+    html, body {
+        margin: 0;
+        padding: 0;
+        background: #f5f5f5;
+        color: #222;
+        font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",
+                     "PingFang SC","Microsoft YaHei",sans-serif;
+    }
+    body {
+        min-height: 100vh;
+    }
+    button,
+    input,
+    textarea {
+        font-family: inherit;
+    }
+    button {
+        cursor: pointer;
+    }
+    .app {
+        max-width: 760px;
+        margin: 0 auto;
+        min-height: 100vh;
+    }
+    /* 顶部 */
+    .header {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        background: rgba(255,255,255,.97);
+        backdrop-filter: blur(10px);
+        padding: 14px 14px 10px;
+        border-bottom: 1px solid #eee;
+    }
+    .header-title {
+        font-size: 22px;
+        font-weight: 800;
+        margin-bottom: 11px;
+    }
+    .search {
+        width: 100%;
+        height: 43px;
+        border: 1px solid #ddd;
+        border-radius: 22px;
+        background: #f5f5f5;
+        outline: none;
+        padding: 0 17px;
+        font-size: 15px;
+    }
+    .search:focus {
+        background: #fff;
+        border-color: #999;
+    }
+    /* 分类 */
+    .categories {
+        position: sticky;
+        top: 85px;
+        z-index: 20;
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 10px 14px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+        scrollbar-width: none;
+    }
+    .categories::-webkit-scrollbar {
+        display: none;
+    }
+    .cat {
+        flex: 0 0 auto;
+        border: 1px solid #ddd;
+        border-radius: 18px;
+        background: #fff;
+        color: #555;
+        padding: 7px 14px;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    .cat.active {
+        background: #111;
+        border-color: #111;
+        color: #fff;
+    }
+    /* 内容 */
+    .content {
+        padding: 12px;
+    }
+    .result-info {
+        color: #888;
+        font-size: 13px;
+        margin: 2px 4px 11px;
+    }
+    .products {
+        display: grid;
+        grid-template-columns: repeat(2,minmax(0,1fr));
+        gap: 12px;
+    }
+    /* 商品卡 */
+    .card {
+        overflow: hidden;
+        background: #fff;
+        border-radius: 13px;
+        box-shadow: 0 1px 6px rgba(0,0,0,.06);
+    }
+    .photo-box {
+        width: 100%;
+        aspect-ratio: 1/1;
+        background: #eee;
+        position: relative;
+        overflow: hidden;
+    }
+    .photo-box img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #aaa;
+        font-size: 14px;
+    }
+    .card-body {
+        padding: 10px;
+    }
+    .name {
+        font-size: 15px;
+        line-height: 1.45;
+        font-weight: 700;
+        min-height: 43px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .code {
+        color: #999;
+        font-size: 12px;
+        margin-top: 4px;
+    }
+    .bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 8px;
+        gap: 5px;
+    }
+    .price {
+        font-size: 16px;
+        font-weight: 800;
+    }
+    .stock {
+        color: #999;
+        font-size: 12px;
+    }
+    /* 状态 */
+    .loading,
+    .empty,
+    .error {
+        text-align: center;
+        padding: 70px 20px;
+        color: #999;
+    }
+    .retry {
+        margin-top: 14px;
+        border: 0;
+        border-radius: 9px;
+        background: #111;
+        color: #fff;
+        padding: 10px 20px;
+    }
+    /* 弹窗 */
+    .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        align-items: flex-end;
+        justify-content: center;
+        background: rgba(0,0,0,.55);
+    }
+    .overlay.show {
+        display: flex;
+    }
+    .sheet {
+        width: 100%;
+        max-width: 760px;
+        max-height: 92vh;
+        overflow-y: auto;
+        background: #fff;
+        border-radius: 19px 19px 0 0;
+        padding: 18px;
+        animation: up .2s ease;
+    }
+    @keyframes up {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+    }
+    .close {
+        float: right;
+        width: 35px;
+        height: 35px;
+        border: 0;
+        border-radius: 50%;
+        background: #eee;
+        font-size: 21px;
+    }
+    .detail-photo {
+        width: 100%;
+        max-height: 400px;
+        object-fit: contain;
+        border-radius: 12px;
+        background: #f3f3f3;
+        margin-bottom: 14px;
+    }
+    .detail-title {
+        font-size: 22px;
+        font-weight: 800;
+        margin: 4px 45px 15px 0;
+    }
+    .detail-row {
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+    }
+    .label {
+        color: #888;
+        margin-right: 6px;
+    }
+    .description {
+        padding: 14px 0 2px;
+        color: #555;
+        line-height: 1.7;
+        white-space: pre-wrap;
+    }
+    .primary {
+        width: 100%;
+        height: 47px;
+        border: 0;
+        border-radius: 10px;
+        margin-top: 18px;
+        background: #111;
+        color: #fff;
+        font-size: 16px;
+        font-weight: 700;
+    }
+    .primary:active {
+        opacity: .8;
+    }
+    /* 表单 */
+    .form-title {
+        font-size: 20px;
+        font-weight: 800;
+        margin: 5px 45px 18px 0;
+    }
+    .product-selected {
+        padding: 11px;
+        border-radius: 9px;
+        background: #f5f5f5;
+        margin-bottom: 15px;
+        font-size: 14px;
+    }
+    .form-label {
+        display: block;
+        margin: 13px 0 6px;
+        font-size: 14px;
+        color: #555;
+    }
+    .form-input,
+    .form-textarea {
+        width: 100%;
+        border: 1px solid #ddd;
+        border-radius: 9px;
+        padding: 11px;
+        font-size: 15px;
+        outline: none;
+    }
+    .form-textarea {
+        min-height: 105px;
+        resize: vertical;
+    }
+    /* Toast */
+    .toast {
+        position: fixed;
+        z-index: 300;
+        left: 50%;
+        bottom: 30px;
+        transform: translateX(-50%);
+        display: none;
+        max-width: 85%;
+        padding: 10px 17px;
+        border-radius: 20px;
+        background: rgba(0,0,0,.82);
+        color: #fff;
+        font-size: 14px;
+        text-align: center;
+    }
+    .toast.show {
+        display: block;
+    }
+    @media (max-width: 380px) {
+        .products {
+            gap: 8px;
+        }
+        .content {
+            padding: 8px;
+        }
+        .card-body {
+            padding: 8px;
+        }
+    }
+</style>
+</head>
+<body>
+<div class="app">
+<header class="header">
+    <div class="header-title">商品目录</div>
+    <input
+        id="search"
+        class="search"
+        type="search"
+        placeholder="搜索商品名称、编号..."
+        autocomplete="off"
+    >
+</header>
+<nav id="categories" class="categories"></nav>
+<main class="content">
+    <div id="resultInfo" class="result-info">
+        正在加载商品...
+    </div>
+    <div id="loading" class="loading">
+        正在加载...
+    </div>
+    <div id="products" class="products"></div>
+    <div id="empty" class="empty" style="display:none;">
+        没有找到商品
+    </div>
+    <div id="error" class="error" style="display:none;">
+        商品加载失败
+        <br>
+        <button class="retry" onclick="loadProducts()">
+            重新加载
+        </button>
+    </div>
+</main>
+</div>
+<!-- 商品详情 -->
+<div id="detailOverlay" class="overlay">
+<div class="sheet">
+    <button class="close" onclick="closeDetail()">×</button>
+    <div id="detail"></div>
+</div>
+</div>
+<!-- 询价 -->
+<div id="inquiryOverlay" class="overlay">
+<div class="sheet">
+    <button class="close" onclick="closeInquiry()">×</button>
+    <div class="form-title">商品询价</div>
+    <div id="selectedProduct" class="product-selected"></div>
+    <label class="form-label">联系方式</label>
+    <input
+        id="contact"
+        class="form-input"
+        type="text"
+        placeholder="微信 / 手机号 / Telegram"
+    >
+    <label class="form-label">询价内容</label>
+    <textarea
+        id="message"
+        class="form-textarea"
+        placeholder="例如：需要10件，请报价"
+    ></textarea>
+    <button class="primary" onclick="submitInquiry()">
+        提交询价
+    </button>
+</div>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+    let tg = null;
+    let products = [];
+    let currentCategory = "全部";
     let currentProduct = null;
-
-
-    /* =========================
-       页面初始化
-    ========================= */
-
-    document.addEventListener("DOMContentLoaded", function () {
-
-        loadProducts();
-
-        const searchInput =
-            document.getElementById("searchInput");
-
-        searchInput.addEventListener("input", function () {
-
-            renderProducts();
-
-        });
-
-    });
-
-
-    /* =========================
-       加载商品
-    ========================= */
-
-    async function loadProducts() {
-
-        setStatus("正在加载商品...");
-
+    /* Telegram Mini App */
+    if (window.Telegram && window.Telegram.WebApp) {
+        tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
         try {
-
-            const response =
-                await fetch("/api/products", {
+            tg.setHeaderColor("#ffffff");
+            tg.setBackgroundColor("#f5f5f5");
+        } catch (e) {}
+    }
+    document.addEventListener("DOMContentLoaded", function () {
+        document
+            .getElementById("search")
+            .addEventListener("input", render);
+        loadProducts();
+    });
+    /* 加载商品 */
+    async function loadProducts() {
+        show("loading");
+        hide("error");
+        hide("empty");
+        document
+            .getElementById("products")
+            .innerHTML = "";
+        try {
+            const response = await fetch(
+                "/api/products?active=1&_=" + Date.now(),
+                {
                     method: "GET",
                     cache: "no-store"
-                });
-
+                }
+            );
             if (!response.ok) {
-
-                throw new Error(
-                    "HTTP " + response.status
-                );
-
+                throw new Error("HTTP " + response.status);
             }
-
             const data = await response.json();
-
             if (!Array.isArray(data)) {
-
-                throw new Error(
-                    "商品数据格式错误"
-                );
-
+                throw new Error("商品数据格式错误");
             }
-
-            allProducts = data;
-
-            renderCategories();
-
-            renderProducts();
-
-            setStatus(
-                "共 " + allProducts.length + " 个商品"
-            );
-
+            products = data;
+            hide("loading");
+            buildCategories();
+            render();
         } catch (error) {
-
             console.error(error);
-
-            setStatus("商品加载失败");
-
-            showToast(
-                "商品加载失败，请检查服务器"
-            );
-
+            hide("loading");
+            show("error");
+            document
+                .getElementById("resultInfo")
+                .textContent = "商品加载失败";
         }
-
     }
-
-
-    /* =========================
-       分类
-    ========================= */
-
-    function renderCategories() {
-
+    /* 分类 */
+    function buildCategories() {
         const box =
             document.getElementById("categories");
-
         box.innerHTML = "";
-
-        const allBtn =
-            document.createElement("button");
-
-        allBtn.className =
-            "category-btn active";
-
-        allBtn.dataset.category =
-            "all";
-
-        allBtn.textContent =
-            "全部";
-
-        allBtn.onclick = function () {
-
-            selectCategory("all");
-
-        };
-
-        box.appendChild(allBtn);
-
-
-        const categories = [];
-
-        allProducts.forEach(function (product) {
-
+        const categories = ["全部"];
+        products.forEach(function (p) {
             const category =
-                product.category_name ||
-                product.category ||
+                p.category_name ||
+                p.category ||
                 "";
-
             if (
                 category &&
                 !categories.includes(category)
             ) {
-
                 categories.push(category);
-
             }
-
         });
-
-
         categories.forEach(function (category) {
-
-            const btn =
+            const button =
                 document.createElement("button");
-
-            btn.className =
-                "category-btn";
-
-            btn.dataset.category =
+            button.className =
+                "cat" +
+                (category === currentCategory
+                    ? " active"
+                    : "");
+            button.textContent =
                 category;
-
-            btn.textContent =
-                category;
-
-            btn.onclick = function () {
-
-                selectCategory(category);
-
+            button.onclick = function () {
+                currentCategory = category;
+                document
+                    .querySelectorAll(".cat")
+                    .forEach(function (item) {
+                        item.classList.remove("active");
+                    });
+                button.classList.add("active");
+                render();
             };
-
-            box.appendChild(btn);
-
+            box.appendChild(button);
         });
-
     }
-
-
-    function selectCategory(category) {
-
-        currentCategory =
-            category;
-
-        document
-            .querySelectorAll(".category-btn")
-            .forEach(function (btn) {
-
-                btn.classList.toggle(
-                    "active",
-                    btn.dataset.category === category
-                );
-
-            });
-
-        renderProducts();
-
-    }
-
-
-    /* =========================
-       商品筛选
-    ========================= */
-
-    function getFilteredProducts() {
-
+    /* 筛选 */
+    function filteredProducts() {
         const keyword =
             document
-                .getElementById("searchInput")
+                .getElementById("search")
                 .value
                 .trim()
                 .toLowerCase();
-
-
-        return allProducts.filter(function (product) {
-
+        return products.filter(function (p) {
             const category =
-                product.category_name ||
-                product.category ||
+                p.category_name ||
+                p.category ||
                 "";
-
-
             const name =
-                String(product.name || "")
-                    .toLowerCase();
-
+                String(p.name || "").toLowerCase();
             const code =
-                String(product.code || "")
-                    .toLowerCase();
-
+                String(p.code || "").toLowerCase();
             const description =
-                String(product.description || "")
-                    .toLowerCase();
-
-
-            const categoryMatch =
-                currentCategory === "all" ||
+                String(p.description || "").toLowerCase();
+            const categoryOK =
+                currentCategory === "全部" ||
                 category === currentCategory;
-
-
-            const searchMatch =
+            const searchOK =
                 !keyword ||
                 name.includes(keyword) ||
                 code.includes(keyword) ||
                 description.includes(keyword);
-
-
-            return categoryMatch &&
-                   searchMatch;
-
+            return categoryOK && searchOK;
         });
-
     }
-
-
-    /* =========================
-       显示商品
-    ========================= */
-
-    function renderProducts() {
-
-        const container =
+    /* 显示商品 */
+    function render() {
+        const box =
             document.getElementById("products");
-
         const empty =
             document.getElementById("empty");
-
-
-        const products =
-            getFilteredProducts();
-
-
-        container.innerHTML = "";
-
-
-        if (products.length === 0) {
-
-            empty.style.display =
-                "block";
-
-            setStatus("没有找到商品");
-
+        const list =
+            filteredProducts();
+        box.innerHTML = "";
+        if (list.length === 0) {
+            show("empty");
+            document
+                .getElementById("resultInfo")
+                .textContent = "没有找到商品";
             return;
-
         }
-
-
-        empty.style.display =
-            "none";
-
-
-        setStatus(
-            "显示 " +
-            products.length +
-            " 个商品"
-        );
-
-
-        products.forEach(function (product) {
-
-            const card =
-                createProductCard(product);
-
-            container.appendChild(card);
-
+        hide("empty");
+        document
+            .getElementById("resultInfo")
+            .textContent =
+                "共 " + list.length + " 个商品";
+        list.forEach(function (product) {
+            box.appendChild(
+                createCard(product)
+            );
         });
-
     }
-
-
-    /* =========================
-       创建商品卡片
-    ========================= */
-
-    function createProductCard(product) {
-
+    /* 商品卡片 */
+    function createCard(product) {
         const card =
             document.createElement("div");
-
-        card.className =
-            "product-card";
-
-
-        /* 图片 */
-
-        const imageBox =
+        card.className = "card";
+        const photoBox =
             document.createElement("div");
-
-        imageBox.className =
-            "product-image";
-
-
+        photoBox.className =
+            "photo-box";
         if (product.photo_url) {
-
             const img =
                 document.createElement("img");
-
-            img.src =
-                product.photo_url;
-
-            img.alt =
-                product.name || "商品";
-
-            img.loading =
-                "lazy";
-
-
-            img.onerror =
-                function () {
-
-                    imageBox.innerHTML = "";
-
-                    const placeholder =
-                        document.createElement("div");
-
-                    placeholder.className =
-                        "image-placeholder";
-
-                    placeholder.textContent =
-                        "暂无图片";
-
-                    imageBox.appendChild(
-                        placeholder
-                    );
-
-                };
-
-
-            imageBox.appendChild(img);
-
+            img.src = product.photo_url;
+            img.alt = product.name || "商品";
+            img.loading = "lazy";
+            img.onerror = function () {
+                photoBox.innerHTML =
+                    '<div class="placeholder">暂无图片</div>';
+            };
+            photoBox.appendChild(img);
         } else {
-
-            const placeholder =
-                document.createElement("div");
-
-            placeholder.className =
-                "image-placeholder";
-
-            placeholder.textContent =
-                "暂无图片";
-
-            imageBox.appendChild(
-                placeholder
-            );
-
+            photoBox.innerHTML =
+                '<div class="placeholder">暂无图片</div>';
         }
-
-
-        /* 商品信息 */
-
-        const info =
+        const body =
             document.createElement("div");
-
-        info.className =
-            "product-info";
-
-
+        body.className = "card-body";
         const name =
             document.createElement("div");
-
-        name.className =
-            "product-name";
-
+        name.className = "name";
         name.textContent =
             product.name || "未命名商品";
-
-
         const code =
             document.createElement("div");
-
-        code.className =
-            "product-code";
-
+        code.className = "code";
         code.textContent =
             product.code
                 ? "编号：" + product.code
                 : "";
-
-
         const bottom =
             document.createElement("div");
-
-        bottom.className =
-            "product-bottom";
-
-
+        bottom.className = "bottom";
         const price =
             document.createElement("div");
-
-        price.className =
-            "price";
-
+        price.className = "price";
         price.textContent =
             formatPrice(product.price);
-
-
         const stock =
             document.createElement("div");
-
-        stock.className =
-            "stock";
-
+        stock.className = "stock";
         if (
             product.stock !== undefined &&
             product.stock !== null
         ) {
-
             stock.textContent =
                 "库存 " + product.stock;
-
         }
-
-
         bottom.appendChild(price);
-
         bottom.appendChild(stock);
-
-
-        info.appendChild(name);
-
-        info.appendChild(code);
-
-        info.appendChild(bottom);
-
-
-        card.appendChild(imageBox);
-
-        card.appendChild(info);
-
-
-        card.onclick =
-            function () {
-
-                openDetail(product);
-
-            };
-
-
+        body.appendChild(name);
+        body.appendChild(code);
+        body.appendChild(bottom);
+        card.appendChild(photoBox);
+        card.appendChild(body);
+        card.onclick = function () {
+            openDetail(product);
+        };
         return card;
-
     }
-
-
-    /* =========================
-       商品详情
-    ========================= */
-
+    /* 商品详情 */
     function openDetail(product) {
-
-        currentProduct =
-            product;
-
-
-        const container =
-            document.getElementById(
-                "detailContent"
-            );
-
-
-        container.innerHTML = "";
-
-
-        /* 关闭按钮占位 */
-
-        const image =
-            document.createElement("img");
-
-        image.className =
-            "detail-image";
-
-
+        currentProduct = product;
+        const box =
+            document.getElementById("detail");
+        box.innerHTML = "";
         if (product.photo_url) {
-
-            image.src =
-                product.photo_url;
-
-            image.alt =
-                product.name || "商品";
-
-            image.onerror =
-                function () {
-
-                    this.style.display =
-                        "none";
-
-                };
-
-        } else {
-
-            image.style.display =
-                "none";
-
+            const img =
+                document.createElement("img");
+            img.className = "detail-photo";
+            img.src = product.photo_url;
+            img.alt = product.name || "商品";
+            img.onerror = function () {
+                this.style.display = "none";
+            };
+            box.appendChild(img);
         }
-
-
-        const name =
+        const title =
             document.createElement("div");
-
-        name.className =
-            "detail-name";
-
-        name.textContent =
+        title.className = "detail-title";
+        title.textContent =
             product.name || "未命名商品";
-
-
-        container.appendChild(image);
-
-        container.appendChild(name);
-
-
-        addDetailRow(
-            container,
+        box.appendChild(title);
+        addRow(
+            box,
             "编号",
             product.code
         );
-
-
-        addDetailRow(
-            container,
+        addRow(
+            box,
             "分类",
             product.category_name ||
             product.category
         );
-
-
-        addDetailRow(
-            container,
+        addRow(
+            box,
             "价格",
             formatPrice(product.price)
         );
-
-
         if (
             product.stock !== undefined &&
             product.stock !== null
         ) {
-
-            addDetailRow(
-                container,
+            addRow(
+                box,
                 "库存",
                 product.stock
             );
-
         }
-
-
         if (product.description) {
-
             const description =
                 document.createElement("div");
-
             description.className =
-                "detail-description";
-
+                "description";
             description.textContent =
                 product.description;
-
-            container.appendChild(
-                description
-            );
-
+            box.appendChild(description);
         }
-
-
-        const inquiryButton =
+        const button =
             document.createElement("button");
-
-        inquiryButton.className =
-            "main-btn";
-
-        inquiryButton.textContent =
-            "立即询价";
-
-        inquiryButton.onclick =
-            function () {
-
-                closeDetail();
-
-                openInquiry(product);
-
-            };
-
-
-        container.appendChild(
-            inquiryButton
-        );
-
-
-        document
-            .getElementById("detailModal")
-            .classList.add("show");
-
+        button.className = "primary";
+        button.textContent = "立即询价";
+        button.onclick = function () {
+            closeDetail();
+            openInquiry(product);
+        };
+        box.appendChild(button);
+        showOverlay("detailOverlay");
     }
-
-
-    function addDetailRow(
-        container,
-        label,
-        value
-    ) {
-
+    function addRow(container, label, value) {
         if (
             value === undefined ||
             value === null ||
             value === ""
         ) {
-
             return;
-
         }
-
-
         const row =
             document.createElement("div");
-
-        row.className =
-            "detail-row";
-
-
+        row.className = "detail-row";
         const labelSpan =
             document.createElement("span");
-
-        labelSpan.className =
-            "detail-label";
-
+        labelSpan.className = "label";
         labelSpan.textContent =
             label + "：";
-
-
         const valueSpan =
             document.createElement("span");
-
-        valueSpan.textContent =
-            value;
-
-
+        valueSpan.textContent = value;
         row.appendChild(labelSpan);
-
         row.appendChild(valueSpan);
-
-
         container.appendChild(row);
-
     }
-
-
     function closeDetail() {
-
-        document
-            .getElementById("detailModal")
-            .classList.remove("show");
-
+        hideOverlay("detailOverlay");
     }
-
-
-    /* =========================
-       询价
-    ========================= */
-
+    /* 询价 */
     function openInquiry(product) {
-
-        currentProduct =
-            product;
-
-
+        currentProduct = product;
         document
-            .getElementById(
-                "inquiryProductName"
-            )
+            .getElementById("selectedProduct")
             .textContent =
                 "商品：" +
                 (product.name || "");
-
-
         document
-            .getElementById(
-                "contactInput"
-            )
+            .getElementById("contact")
             .value = "";
-
-
         document
-            .getElementById(
-                "messageInput"
-            )
+            .getElementById("message")
             .value = "";
-
-
-        document
-            .getElementById(
-                "inquiryModal"
-            )
-            .classList.add("show");
-
+        showOverlay("inquiryOverlay");
     }
-
-
     function closeInquiry() {
-
-        document
-            .getElementById(
-                "inquiryModal"
-            )
-            .classList.remove("show");
-
+        hideOverlay("inquiryOverlay");
     }
-
-
     async function submitInquiry() {
-
         if (!currentProduct) {
-
-            showToast(
-                "请选择商品"
-            );
-
+            toast("请选择商品");
             return;
-
         }
-
-
         const contact =
             document
-                .getElementById(
-                    "contactInput"
-                )
+                .getElementById("contact")
                 .value
                 .trim();
-
-
         const message =
             document
-                .getElementById(
-                    "messageInput"
-                )
+                .getElementById("message")
                 .value
                 .trim();
-
-
         if (!contact && !message) {
-
-            showToast(
-                "请填写联系方式或询价内容"
-            );
-
+            toast("请填写联系方式或询价内容");
             return;
-
         }
-
-
-        const fullMessage =
+        const text =
             "联系方式：" +
             (contact || "未填写") +
             "\n询价内容：" +
             (message || "未填写");
-
-
         try {
-
             const response =
-                await fetch(
-                    "/api/inquiry",
-                    {
-                        method: "POST",
-
-                        headers: {
-                            "Content-Type":
-                                "application/json"
-                        },
-
-                        body: JSON.stringify({
-
-                            product:
-                                currentProduct.name,
-
-                            message:
-                                fullMessage
-
-                        })
-
-                    }
-                );
-
-
+                await fetch("/api/inquiry", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+                    body: JSON.stringify({
+                        product:
+                            currentProduct.name,
+                        message: text
+                    })
+                });
             const result =
                 await response.json();
-
-
             if (!response.ok) {
-
                 throw new Error(
-                    result.error ||
-                    "提交失败"
+                    result.error || "提交失败"
                 );
-
             }
-
-
             closeInquiry();
-
-
-            showToast(
-                "询价已提交"
-            );
-
-
+            toast("询价已提交");
             if (
                 tg &&
                 tg.HapticFeedback
             ) {
-
                 try {
-
                     tg.HapticFeedback
                         .notificationOccurred(
                             "success"
                         );
-
                 } catch (e) {}
-
             }
-
-
         } catch (error) {
-
             console.error(error);
-
-            showToast(
-                "提交失败，请稍后再试"
-            );
-
+            toast("提交失败，请稍后再试");
         }
-
     }
-
-
-    /* =========================
-       工具函数
-    ========================= */
-
+    /* 工具 */
     function formatPrice(price) {
-
         if (
             price === undefined ||
             price === null ||
             price === ""
         ) {
-
             return "询价";
-
         }
-
-
-        const text =
-            String(price);
-
-
+        const value = String(price);
         if (
-            text.includes("¥") ||
-            text.includes("￥") ||
-            text.includes("询价")
+            value.includes("¥") ||
+            value.includes("￥") ||
+            value.includes("询价")
         ) {
-
-            return text;
-
+            return value;
         }
-
-
-        return "¥" + text;
-
+        return "¥" + value;
     }
-
-
-    function setStatus(text) {
-
+    function show(id) {
+        document.getElementById(id).style.display = "";
+    }
+    function hide(id) {
+        document.getElementById(id).style.display = "none";
+    }
+    function showOverlay(id) {
         document
-            .getElementById("status")
-            .textContent =
-                text;
-
+            .getElementById(id)
+            .classList.add("show");
+        document.body.style.overflow = "hidden";
     }
-
-
-    function showToast(text) {
-
-        const toast =
-            document.getElementById(
-                "toast"
-            );
-
-
-        toast.textContent =
-            text;
-
-
-        toast.classList.add(
-            "show"
-        );
-
-
-        setTimeout(
-            function () {
-
-                toast.classList.remove(
-                    "show"
-                );
-
-            },
-            2500
-        );
-
+    function hideOverlay(id) {
+        document
+            .getElementById(id)
+            .classList.remove("show");
+        document.body.style.overflow = "";
     }
-
-
-    /* =========================
-       点击弹窗外部关闭
-    ========================= */
-
+    function toast(message) {
+        const box =
+            document.getElementById("toast");
+        box.textContent = message;
+        box.classList.add("show");
+        setTimeout(function () {
+            box.classList.remove("show");
+        }, 2500);
+    }
+    /* 点击遮罩关闭 */
     document
-        .getElementById("detailModal")
-        .addEventListener(
-            "click",
-            function (event) {
-
-                if (
-                    event.target === this
-                ) {
-
-                    closeDetail();
-
-                }
-
+        .getElementById("detailOverlay")
+        .addEventListener("click", function(e) {
+            if (e.target === this) {
+                closeDetail();
             }
-        );
-
-
+        });
     document
-        .getElementById("inquiryModal")
-        .addEventListener(
-            "click",
-            function (event) {
-
-                if (
-                    event.target === this
-                ) {
-
-                    closeInquiry();
-
-                }
-
+        .getElementById("inquiryOverlay")
+        .addEventListener("click", function(e) {
+            if (e.target === this) {
+                closeInquiry();
             }
-        );
-
+        });
 </script>
-
 </body>
 </html>
