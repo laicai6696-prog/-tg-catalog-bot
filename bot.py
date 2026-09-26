@@ -9,17 +9,39 @@ import shutil
 import asyncio
 import threading
 import json
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
 load_dotenv()
 
-TOKEN = os.getenv("BOT_TOKEN", "")
-DB = "bot.db"
+# =========================================================
+# 基础配置
+# =========================================================
+
+TOKEN = os.getenv("BOT_TOKEN", "").strip()
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# 固定数据库路径
+DB = str(BASE_DIR / "bot.db")
 
 ADMINS = {
     int(x.strip())
@@ -47,8 +69,15 @@ CATS = {
     "c12": "白皮系列",
 }
 
-CAT_BY_NAME = {v: k for k, v in CATS.items()}
+CAT_BY_NAME = {
+    v: k
+    for k, v in CATS.items()
+}
 
+
+# =========================================================
+# 数据库
+# =========================================================
 
 def db():
     c = sqlite3.connect(DB)
@@ -100,12 +129,21 @@ def init():
     c.commit()
     c.close()
 
+    logging.info("数据库路径：%s", DB)
+
+
+# =========================================================
+# 用户首页
+# =========================================================
 
 def home():
+
     items = list(CATS.items())
+
     rows = []
 
     for i in range(0, len(items), 2):
+
         row = [
             InlineKeyboardButton(
                 CATS[items[i][0]],
@@ -114,6 +152,7 @@ def home():
         ]
 
         if i + 1 < len(items):
+
             row.append(
                 InlineKeyboardButton(
                     CATS[items[i + 1][0]],
@@ -137,7 +176,12 @@ def home():
     return InlineKeyboardMarkup(rows)
 
 
+# =========================================================
+# 管理后台
+# =========================================================
+
 def admin_home(p, a, q):
+
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -172,7 +216,15 @@ def admin_home(p, a, q):
     ])
 
 
-async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# /start
+# =========================================================
+
+async def start(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
     ctx.user_data.clear()
 
     web_url = os.getenv(
@@ -181,6 +233,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ).strip()
 
     if web_url:
+
         keyboard = [[
             InlineKeyboardButton(
                 "🛍️ 打开商品目录",
@@ -199,6 +252,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     else:
+
         await update.message.reply_text(
             "欢迎使用商品目录\n"
             "请选择分类：",
@@ -206,11 +260,21 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# 用户按钮
+# =========================================================
+
+async def user_button(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
     q = update.callback_query
+
     await q.answer()
 
     if q.data in CATS:
+
         c = db()
 
         rows = c.execute(
@@ -228,10 +292,18 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = []
 
         for r in rows:
+
             if str(r["price"]).isdigit():
-                label = f"{r['name']} · ¥{r['price']}"
+
+                label = (
+                    f"{r['name']} · ¥{r['price']}"
+                )
+
             else:
-                label = f"{r['name']} · {r['price']}"
+
+                label = (
+                    f"{r['name']} · {r['price']}"
+                )
 
             kb.append([
                 InlineKeyboardButton(
@@ -253,12 +325,14 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data == "home":
+
         await q.message.edit_text(
             "请选择分类：",
             reply_markup=home()
         )
 
     elif q.data == "search":
+
         ctx.user_data["mode"] = "search"
 
         await q.message.reply_text(
@@ -266,6 +340,7 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data == "inquiry":
+
         ctx.user_data["mode"] = "inquiry"
 
         await q.message.reply_text(
@@ -273,6 +348,7 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data.startswith("p:"):
+
         pid = int(q.data[2:])
 
         c = db()
@@ -289,9 +365,11 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         c.close()
 
         if not r:
+
             await q.message.reply_text(
                 "商品不存在。"
             )
+
             return
 
         kb = [
@@ -318,24 +396,31 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         if r["photo_id"]:
+
             try:
+
                 await q.message.reply_photo(
                     photo=r["photo_id"],
                     caption=text,
                     reply_markup=InlineKeyboardMarkup(kb)
                 )
+
             except Exception:
+
                 await q.message.reply_text(
                     text,
                     reply_markup=InlineKeyboardMarkup(kb)
                 )
+
         else:
+
             await q.message.reply_text(
                 text,
                 reply_markup=InlineKeyboardMarkup(kb)
             )
 
     elif q.data.startswith("iq:"):
+
         pid = int(q.data[3:])
 
         c = db()
@@ -359,11 +444,21 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def user_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# 用户文字
+# =========================================================
+
+async def user_text(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
     text = update.message.text.strip()
+
     mode = ctx.user_data.get("mode")
 
     if mode == "search":
+
         ctx.user_data.clear()
 
         c = db()
@@ -385,15 +480,18 @@ async def user_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         c.close()
 
         if not rows:
+
             await update.message.reply_text(
                 "没有找到结果。",
                 reply_markup=home()
             )
+
             return
 
         kb = []
 
         for r in rows:
+
             kb.append([
                 InlineKeyboardButton(
                     f"{r['name']} · {r['price']}",
@@ -407,6 +505,7 @@ async def user_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif mode == "inquiry":
+
         product = ctx.user_data.get(
             "product",
             ""
@@ -433,6 +532,7 @@ async def user_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         iid = cur.lastrowid
 
         c.commit()
+
         c.close()
 
         ctx.user_data.clear()
@@ -442,7 +542,9 @@ async def user_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         for aid in ADMINS:
+
             try:
+
                 await ctx.bot.send_message(
                     aid,
                     f"📩 新询价 #{iid}\n"
@@ -451,11 +553,21 @@ async def user_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"商品：{product}\n"
                     f"内容：{text}"
                 )
+
             except Exception:
+
                 pass
 
 
-async def admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# 管理后台
+# =========================================================
+
+async def admin(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
     if update.effective_user.id not in ADMINS:
         return
 
@@ -487,16 +599,27 @@ async def admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# 管理员按钮
+# =========================================================
+
+async def admin_button(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
     q = update.callback_query
 
     if q.from_user.id not in ADMINS:
+
         await q.answer()
+
         return
 
     await q.answer()
 
     if q.data == "a:products":
+
         c = db()
 
         rows = c.execute(
@@ -530,6 +653,7 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data.startswith("a:cat:"):
+
         cat = q.data.split(":", 2)[2]
 
         c = db()
@@ -549,6 +673,7 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = []
 
         for r in rows:
+
             prefix = (
                 "🖼️ "
                 if r["photo_id"]
@@ -576,6 +701,7 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data.startswith("a:prod:"):
+
         pid = int(
             q.data.split(":")[2]
         )
@@ -602,6 +728,7 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
 
         if r["photo_id"]:
+
             buttons.append([
                 InlineKeyboardButton(
                     "👁️ 查看图片",
@@ -629,15 +756,14 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data.startswith("a:setphoto:"):
+
         pid = int(
             q.data.split(":")[2]
         )
 
         ctx.user_data["admin_mode"] = "set_photo"
 
-        ctx.user_data[
-            "photo_product_id"
-        ] = pid
+        ctx.user_data["photo_product_id"] = pid
 
         await q.message.reply_text(
             "请发送这件商品的图片。\n"
@@ -645,6 +771,7 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data.startswith("a:viewphoto:"):
+
         pid = int(
             q.data.split(":")[2]
         )
@@ -663,12 +790,14 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         c.close()
 
         if r and r["photo_id"]:
+
             await q.message.reply_photo(
                 r["photo_id"],
                 caption=r["name"]
             )
 
     elif q.data.startswith("a:delphoto:"):
+
         pid = int(
             q.data.split(":")[2]
         )
@@ -685,6 +814,7 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         c.commit()
+
         c.close()
 
         await q.message.reply_text(
@@ -692,9 +822,8 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data == "a:importpkg":
-        ctx.user_data[
-            "admin_mode"
-        ] = "import_package"
+
+        ctx.user_data["admin_mode"] = "import_package"
 
         await q.message.reply_text(
             "📦 一键上传商品+图片\n\n"
@@ -705,15 +834,15 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data == "a:importcsv":
-        ctx.user_data[
-            "admin_mode"
-        ] = "import_csv"
+
+        ctx.user_data["admin_mode"] = "import_csv"
 
         await q.message.reply_text(
             "请发送93个商品的CSV文件。"
         )
 
     elif q.data == "a:inq":
+
         c = db()
 
         rows = c.execute(
@@ -728,9 +857,11 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         c.close()
 
         if not rows:
+
             await q.message.reply_text(
                 "暂无询价"
             )
+
             return
 
         text = "\n\n".join(
@@ -746,9 +877,8 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data == "a:add":
-        ctx.user_data[
-            "admin_mode"
-        ] = "add_photo"
+
+        ctx.user_data["admin_mode"] = "add_photo"
 
         await q.message.reply_text(
             "第一步：请先发送商品图片。\n"
@@ -756,14 +886,23 @@ async def admin_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif q.data == "a:back":
-        await admin(update, ctx)
 
+        await admin(
+            update,
+            ctx
+        )
+
+
+# =========================================================
+# ZIP导入
+# =========================================================
 
 async def process_package(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE,
     zip_path: str
 ):
+
     admin_id = update.effective_user.id
 
     temp = Path(
@@ -773,7 +912,9 @@ async def process_package(
     )
 
     try:
+
         with zipfile.ZipFile(zip_path) as z:
+
             bad = [
                 n
                 for n in z.namelist()
@@ -782,9 +923,11 @@ async def process_package(
             ]
 
             if bad:
+
                 await update.message.reply_text(
                     "❌ ZIP文件包含不安全路径，已停止导入。"
                 )
+
                 return
 
             z.extractall(temp)
@@ -794,14 +937,17 @@ async def process_package(
         )
 
         if not csvs:
+
             await update.message.reply_text(
                 "❌ ZIP里没有CSV商品表。"
             )
+
             return
 
         image_map = {}
 
         for p in temp.rglob("*"):
+
             if not p.is_file():
                 continue
 
@@ -812,7 +958,10 @@ async def process_package(
             )
 
             if m:
-                image_map[int(m.group(1))] = p
+
+                image_map[
+                    int(m.group(1)
+                )] = p
 
         with open(
             csvs[0],
@@ -820,6 +969,7 @@ async def process_package(
             encoding="utf-8-sig",
             newline=""
         ) as f:
+
             rows = list(
                 csv.DictReader(f)
             )
@@ -838,17 +988,21 @@ async def process_package(
                 set(rows[0].keys())
             )
         ):
+
             await update.message.reply_text(
                 "❌ CSV格式不正确，需要："
                 "name,code,category,price,stock"
             )
+
             return
 
         if len(rows) != 93:
+
             await update.message.reply_text(
                 f"⚠️ CSV当前有 {len(rows)} 个商品，"
                 "不是预期的93个，已停止。"
             )
+
             return
 
         missing = [
@@ -858,6 +1012,7 @@ async def process_package(
         ]
 
         if missing:
+
             await update.message.reply_text(
                 "❌ 图片不完整，缺少："
                 + ", ".join(
@@ -865,6 +1020,7 @@ async def process_package(
                     for n in missing
                 )
             )
+
             return
 
         c = db()
@@ -873,8 +1029,11 @@ async def process_package(
         updated = 0
 
         try:
+
             for row in rows:
+
                 code = row["code"].strip()
+
                 name = row["name"].strip()
 
                 cat_raw = row[
@@ -887,6 +1046,7 @@ async def process_package(
                 )
 
                 if cat not in CATS:
+
                     raise ValueError(
                         f"商品 {code} 的分类无效："
                         f"{cat_raw}"
@@ -914,6 +1074,7 @@ async def process_package(
                 ).fetchone()
 
                 if exists:
+
                     c.execute(
                         """
                         UPDATE products
@@ -938,6 +1099,7 @@ async def process_package(
                     updated += 1
 
                 else:
+
                     c.execute(
                         """
                         INSERT INTO products
@@ -969,10 +1131,13 @@ async def process_package(
             c.commit()
 
         except Exception:
+
             c.rollback()
+
             raise
 
         finally:
+
             c.close()
 
         await update.message.reply_text(
@@ -986,13 +1151,16 @@ async def process_package(
         photo_fail = []
 
         for n in range(1, 94):
+
             code = f"P{n:03d}"
 
             try:
+
                 with open(
                     image_map[n],
                     "rb"
                 ) as f:
+
                     msg = await ctx.bot.send_photo(
                         chat_id=admin_id,
                         photo=f
@@ -1015,14 +1183,18 @@ async def process_package(
                 )
 
                 c.commit()
+
                 c.close()
 
                 try:
+
                     await ctx.bot.delete_message(
                         chat_id=admin_id,
                         message_id=msg.message_id
                     )
+
                 except Exception:
+
                     pass
 
                 photo_ok += 1
@@ -1032,11 +1204,15 @@ async def process_package(
                 )
 
             except Exception:
+
                 logging.exception(
                     "photo import failed %s",
                     code
                 )
-                photo_fail.append(code)
+
+                photo_fail.append(
+                    code
+                )
 
         result = (
             "✅ 一键上传完成！\n\n"
@@ -1045,6 +1221,7 @@ async def process_package(
         )
 
         if photo_fail:
+
             result += (
                 "\n失败图片："
                 + ", ".join(photo_fail)
@@ -1055,6 +1232,7 @@ async def process_package(
         )
 
     except Exception as e:
+
         logging.exception(
             "package import failed"
         )
@@ -1064,23 +1242,32 @@ async def process_package(
         )
 
     finally:
+
         shutil.rmtree(
             temp,
             ignore_errors=True
         )
 
         try:
+
             os.remove(zip_path)
+
         except Exception:
+
             pass
 
         ctx.user_data.clear()
 
 
+# =========================================================
+# 管理员文件
+# =========================================================
+
 async def admin_document(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE
 ):
+
     if update.effective_user.id not in ADMINS:
         return
 
@@ -1092,6 +1279,7 @@ async def admin_document(
         "import_package",
         "import_csv"
     }:
+
         return
 
     doc = update.message.document
@@ -1103,9 +1291,11 @@ async def admin_document(
     if mode == "import_package":
 
         if not name.endswith(".zip"):
+
             await update.message.reply_text(
                 "请发送ZIP压缩包。"
             )
+
             return
 
         await update.message.reply_text(
@@ -1113,6 +1303,7 @@ async def admin_document(
         )
 
         try:
+
             f = await doc.get_file()
 
             path = os.path.join(
@@ -1130,6 +1321,7 @@ async def admin_document(
             )
 
         except Exception as e:
+
             logging.exception(
                 "ZIP download failed"
             )
@@ -1139,15 +1331,19 @@ async def admin_document(
             )
 
     else:
+
         if not name.endswith(".csv"):
+
             await update.message.reply_text(
                 "请发送CSV文件。"
             )
+
             return
 
         path = None
 
         try:
+
             f = await doc.get_file()
 
             path = os.path.join(
@@ -1175,6 +1371,7 @@ async def admin_document(
             upd = 0
 
             for row in rows:
+
                 cat = CAT_BY_NAME.get(
                     row["category"].strip(),
                     row["category"].strip()
@@ -1204,6 +1401,7 @@ async def admin_document(
                 ).fetchone()
 
                 if ex:
+
                     c.execute(
                         """
                         UPDATE products
@@ -1231,6 +1429,7 @@ async def admin_document(
                     upd += 1
 
                 else:
+
                     c.execute(
                         """
                         INSERT INTO products
@@ -1262,6 +1461,7 @@ async def admin_document(
                     new += 1
 
             c.commit()
+
             c.close()
 
             await update.message.reply_text(
@@ -1271,12 +1471,15 @@ async def admin_document(
             )
 
         except Exception as e:
+
             await update.message.reply_text(
                 f"❌ CSV导入失败：{e}"
             )
 
         finally:
+
             if path:
+
                 try:
                     os.remove(path)
                 except Exception:
@@ -1285,10 +1488,15 @@ async def admin_document(
             ctx.user_data.clear()
 
 
+# =========================================================
+# 管理员图片
+# =========================================================
+
 async def admin_photo(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE
 ):
+
     if update.effective_user.id not in ADMINS:
         return
 
@@ -1297,6 +1505,7 @@ async def admin_photo(
     )
 
     if mode == "set_photo":
+
         pid = ctx.user_data.get(
             "photo_product_id"
         )
@@ -1343,6 +1552,7 @@ async def admin_photo(
         )
 
     elif mode == "add_photo":
+
         ctx.user_data[
             "new_photo_id"
         ] = update.message.photo[-1].file_id
@@ -1358,10 +1568,15 @@ async def admin_photo(
         )
 
 
+# =========================================================
+# 管理员文字
+# =========================================================
+
 async def admin_text(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE
 ):
+
     if update.effective_user.id not in ADMINS:
         return
 
@@ -1373,6 +1588,7 @@ async def admin_text(
         mode == "add_photo"
         and update.message.text.strip() == "跳过"
     ):
+
         ctx.user_data[
             "new_photo_id"
         ] = ""
@@ -1397,25 +1613,33 @@ async def admin_text(
     ]
 
     if len(parts) != 6:
+
         await update.message.reply_text(
             "格式错误，请按：名称|编号|分类|价格|库存|描述"
         )
+
         return
 
     name, code, cat, price, stock, desc = parts
 
     if cat not in CATS:
+
         await update.message.reply_text(
             "分类必须是 c1-c12"
         )
+
         return
 
     try:
+
         stock = int(stock)
+
     except ValueError:
+
         await update.message.reply_text(
             "库存必须是数字"
         )
+
         return
 
     photo_id = ctx.user_data.get(
@@ -1426,6 +1650,7 @@ async def admin_text(
     c = db()
 
     try:
+
         c.execute(
             """
             INSERT INTO products
@@ -1458,38 +1683,93 @@ async def admin_text(
         )
 
     except sqlite3.IntegrityError:
+
         await update.message.reply_text(
             "编号已存在。"
         )
 
     finally:
+
         c.close()
 
     ctx.user_data.clear()
 
 
+# =========================================================
+# 普通文字路由
+# =========================================================
+
 async def text_router(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE
 ):
+
     if (
         update.effective_user.id in ADMINS
         and ctx.user_data.get("admin_mode")
     ):
+
         await admin_text(
             update,
             ctx
         )
+
     else:
+
         await user_text(
             update,
             ctx
         )
 
 
-# =========================
-# Render + TG小程序网页服务器
-# =========================
+# =========================================================
+# Telegram图片下载
+# =========================================================
+
+def telegram_get_file_path(file_id):
+
+    if not TOKEN or not file_id:
+        return None
+
+    try:
+
+        query = urllib.parse.urlencode({
+            "file_id": file_id
+        })
+
+        url = (
+            f"https://api.telegram.org/"
+            f"bot{TOKEN}/getFile?{query}"
+        )
+
+        with urllib.request.urlopen(
+            url,
+            timeout=20
+        ) as response:
+
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        if not data.get("ok"):
+            return None
+
+        return data["result"].get(
+            "file_path"
+        )
+
+    except Exception:
+
+        logging.exception(
+            "Telegram getFile failed"
+        )
+
+        return None
+
+
+# =========================================================
+# HTTP服务器
+# =========================================================
 
 class HealthHandler(BaseHTTPRequestHandler):
 
@@ -1498,6 +1778,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         data,
         status=200
     ):
+
         content = json.dumps(
             data,
             ensure_ascii=False
@@ -1508,6 +1789,11 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Type",
             "application/json; charset=utf-8"
+        )
+
+        self.send_header(
+            "Cache-Control",
+            "no-cache"
         )
 
         self.send_header(
@@ -1526,9 +1812,13 @@ class HealthHandler(BaseHTTPRequestHandler):
             1
         )[0]
 
-        web_root = Path(
-            __file__
-        ).parent / "web"
+        web_root = (
+            BASE_DIR / "web"
+        )
+
+        # -------------------------------------------------
+        # 小程序首页
+        # -------------------------------------------------
 
         if path in [
             "/",
@@ -1555,6 +1845,11 @@ class HealthHandler(BaseHTTPRequestHandler):
                 )
 
                 self.send_header(
+                    "Cache-Control",
+                    "no-cache"
+                )
+
+                self.send_header(
                     "Content-Length",
                     str(len(content))
                 )
@@ -1566,6 +1861,10 @@ class HealthHandler(BaseHTTPRequestHandler):
                 )
 
                 return
+
+        # -------------------------------------------------
+        # 分类接口
+        # -------------------------------------------------
 
         if path == "/api/categories":
 
@@ -1579,53 +1878,277 @@ class HealthHandler(BaseHTTPRequestHandler):
 
             return
 
+        # -------------------------------------------------
+        # 商品接口
+        # -------------------------------------------------
+
         if path == "/api/products":
+
+            try:
+
+                c = db()
+
+                rows = c.execute(
+                    """
+                    SELECT
+                        id,
+                        name,
+                        code,
+                        category,
+                        price,
+                        stock,
+                        description,
+                        photo_id
+                    FROM products
+                    WHERE active=1
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+                c.close()
+
+                data = []
+
+                for r in rows:
+
+                    photo_url = ""
+
+                    if r["photo_id"]:
+
+                        photo_url = (
+                            "/api/photo?id="
+                            + urllib.parse.quote(
+                                str(r["id"])
+                            )
+                        )
+
+                    data.append({
+                        "id": r["id"],
+                        "name": r["name"],
+                        "code": r["code"],
+                        "category": r["category"],
+                        "category_name": CATS.get(
+                            r["category"],
+                            r["category"]
+                        ),
+                        "price": r["price"],
+                        "stock": r["stock"],
+                        "description": r["description"],
+                        "photo_id": r["photo_id"] or "",
+                        "photo_url": photo_url
+                    })
+
+                self.send_json(
+                    data
+                )
+
+                return
+
+            except Exception as e:
+
+                logging.exception(
+                    "api products failed"
+                )
+
+                self.send_json(
+                    {
+                        "ok": False,
+                        "message": str(e)
+                    },
+                    500
+                )
+
+                return
+
+        # -------------------------------------------------
+        # 商品图片接口
+        # -------------------------------------------------
+
+        if path == "/api/photo":
+
+            query = urllib.parse.parse_qs(
+                urllib.parse.urlparse(
+                    self.path
+                ).query
+            )
+
+            pid_list = query.get(
+                "id",
+                []
+            )
+
+            if not pid_list:
+
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            try:
+
+                pid = int(
+                    pid_list[0]
+                )
+
+            except ValueError:
+
+                self.send_response(400)
+                self.end_headers()
+                return
 
             c = db()
 
-            rows = c.execute(
+            r = c.execute(
                 """
-                SELECT
-                    id,
-                    name,
-                    code,
-                    category,
-                    price,
-                    stock,
-                    description,
-                    photo_id
+                SELECT photo_id
                 FROM products
-                WHERE active=1
-                ORDER BY id
-                """
-            ).fetchall()
+                WHERE id=?
+                AND active=1
+                """,
+                (pid,)
+            ).fetchone()
 
             c.close()
 
-            data = []
+            if not r or not r["photo_id"]:
 
-            for r in rows:
+                self.send_response(404)
+                self.end_headers()
+                return
 
-                data.append({
-                    "id": r["id"],
-                    "name": r["name"],
-                    "code": r["code"],
-                    "category": r["category"],
-                    "category_name": CATS.get(
-                        r["category"],
-                        r["category"]
-                    ),
-                    "price": r["price"],
-                    "stock": r["stock"],
-                    "description": r["description"],
-                    "photo_id": r["photo_id"] or ""
-                })
-
-            self.send_json(
-                data
+            file_path = telegram_get_file_path(
+                r["photo_id"]
             )
 
-            return
+            if not file_path:
+
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            try:
+
+                file_url = (
+                    f"https://api.telegram.org/"
+                    f"file/bot{TOKEN}/"
+                    f"{file_path}"
+                )
+
+                with urllib.request.urlopen(
+                    file_url,
+                    timeout=30
+                ) as response:
+
+                    image_data = response.read()
+
+                suffix = (
+                    Path(file_path)
+                    .suffix
+                    .lower()
+                )
+
+                content_type = {
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".png": "image/png",
+                    ".webp": "image/webp"
+                }.get(
+                    suffix,
+                    "image/jpeg"
+                )
+
+                self.send_response(
+                    200
+                )
+
+                self.send_header(
+                    "Content-Type",
+                    content_type
+                )
+
+                self.send_header(
+                    "Cache-Control",
+                    "public, max-age=3600"
+                )
+
+                self.send_header(
+                    "Content-Length",
+                    str(len(image_data))
+                )
+
+                self.end_headers()
+
+                self.wfile.write(
+                    image_data
+                )
+
+                return
+
+            except Exception:
+
+                logging.exception(
+                    "image proxy failed"
+                )
+
+                self.send_response(404)
+                self.end_headers()
+
+                return
+
+        # -------------------------------------------------
+        # 数据库诊断
+        # -------------------------------------------------
+
+        if path == "/api/status":
+
+            try:
+
+                c = db()
+
+                total = c.execute(
+                    "SELECT COUNT(*) FROM products"
+                ).fetchone()[0]
+
+                active = c.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM products
+                    WHERE active=1
+                    """
+                ).fetchone()[0]
+
+                photos = c.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM products
+                    WHERE photo_id IS NOT NULL
+                    AND photo_id != ''
+                    """
+                ).fetchone()[0]
+
+                c.close()
+
+                self.send_json({
+                    "ok": True,
+                    "database": DB,
+                    "total_products": total,
+                    "active_products": active,
+                    "products_with_photos": photos
+                })
+
+                return
+
+            except Exception as e:
+
+                self.send_json({
+                    "ok": False,
+                    "message": str(e)
+                }, 500)
+
+                return
+
+        # -------------------------------------------------
+        # 默认
+        # -------------------------------------------------
 
         self.send_response(
             200
@@ -1642,6 +2165,10 @@ class HealthHandler(BaseHTTPRequestHandler):
             b"Telegram catalog bot is running."
         )
 
+    # =====================================================
+    # POST
+    # =====================================================
+
     def do_POST(self):
 
         path = self.path.split(
@@ -1652,6 +2179,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         if path == "/api/inquiry":
 
             try:
+
                 length = int(
                     self.headers.get(
                         "Content-Length",
@@ -1717,7 +2245,28 @@ class HealthHandler(BaseHTTPRequestHandler):
                 iid = cur.lastrowid
 
                 c.commit()
+
                 c.close()
+
+                # 通知管理员
+                for aid in ADMINS:
+
+                    try:
+
+                        send_admin_message(
+                            aid,
+                            (
+                                f"📩 小程序新询价 #{iid}\n"
+                                f"商品：{product}\n"
+                                f"内容：{message}"
+                            )
+                        )
+
+                    except Exception:
+
+                        logging.exception(
+                            "admin notification failed"
+                        )
 
                 self.send_json({
                     "ok": True,
@@ -1758,6 +2307,46 @@ class HealthHandler(BaseHTTPRequestHandler):
         return
 
 
+# =========================================================
+# 小程序询价通知管理员
+# =========================================================
+
+def send_admin_message(
+    admin_id,
+    message
+):
+
+    if not TOKEN:
+        return
+
+    payload = urllib.parse.urlencode({
+        "chat_id": str(admin_id),
+        "text": message
+    }).encode("utf-8")
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TOKEN}/sendMessage"
+    )
+
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST"
+    )
+
+    with urllib.request.urlopen(
+        request,
+        timeout=20
+    ) as response:
+
+        response.read()
+
+
+# =========================================================
+# Render服务器
+# =========================================================
+
 def start_health_server():
 
     port = int(
@@ -1780,8 +2369,17 @@ def start_health_server():
         port
     )
 
+    logging.info(
+        "Database path: %s",
+        DB
+    )
+
     server.serve_forever()
 
+
+# =========================================================
+# 主程序
+# =========================================================
 
 def main():
 
@@ -1793,6 +2391,7 @@ def main():
 
     init()
 
+    # 启动网页服务器
     health_thread = threading.Thread(
         target=start_health_server,
         daemon=True
@@ -1807,6 +2406,7 @@ def main():
         .build()
     )
 
+    # /start
     app.add_handler(
         CommandHandler(
             "start",
@@ -1814,6 +2414,7 @@ def main():
         )
     )
 
+    # /admin
     app.add_handler(
         CommandHandler(
             "admin",
@@ -1821,6 +2422,7 @@ def main():
         )
     )
 
+    # 管理员按钮
     app.add_handler(
         CallbackQueryHandler(
             admin_button,
@@ -1828,12 +2430,14 @@ def main():
         )
     )
 
+    # 普通用户按钮
     app.add_handler(
         CallbackQueryHandler(
             user_button
         )
     )
 
+    # 文件
     app.add_handler(
         MessageHandler(
             filters.Document.ALL,
@@ -1841,6 +2445,7 @@ def main():
         )
     )
 
+    # 图片
     app.add_handler(
         MessageHandler(
             filters.PHOTO,
@@ -1848,6 +2453,7 @@ def main():
         )
     )
 
+    # 普通文字
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -1857,6 +2463,11 @@ def main():
 
     logging.info(
         "Telegram bot starting with polling..."
+    )
+
+    logging.info(
+        "Database: %s",
+        DB
     )
 
     app.run_polling(
