@@ -1,8 +1,7 @@
 import os
 import csv
-import io
 import json
-import time
+import re
 import shutil
 import sqlite3
 import zipfile
@@ -26,6 +25,7 @@ InlineKeyboardMarkup,
 ReplyKeyboardMarkup,
 WebAppInfo,
 )
+
 from telegram.ext import (
 Application,
 CommandHandler,
@@ -35,13 +35,13 @@ ContextTypes,
 filters,
 )
 
-load_dotenv()
-
-============================================================
+=========================================================
 
 基础配置
 
-============================================================
+=========================================================
+
+load_dotenv()
 
 BASE_DIR = Path(file).resolve().parent
 
@@ -49,27 +49,26 @@ BOT_TOKEN = os.getenv(“BOT_TOKEN”, “”).strip()
 
 WEB_URL = os.getenv(
 “WEB_URL”,
-“https://tg-catalog-bot-10.onrender.com”
+“https://tg-catalog-bot-10.onrender.com”,
 ).strip().rstrip(”/”)
 
+try:
 PORT = int(os.getenv(“PORT”, “10000”))
+except Exception:
+PORT = 10000
 
 DATABASE_URL = os.getenv(“DATABASE_URL”, “”).strip()
 
 CSV_FILE = BASE_DIR / “Telegram商品导入表_93个_可直接导入.csv”
 
 UPLOAD_DIR = BASE_DIR / “uploads”
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-UPLOAD_DIR.mkdir(
-parents=True,
-exist_ok=True
-)
-
-============================================================
+=========================================================
 
 管理员
 
-============================================================
+=========================================================
 
 def get_admin_ids():
 raw = os.getenv(“ADMIN_IDS”, “”).strip()
@@ -84,21 +83,22 @@ for item in raw.split(","):
     try:
         result.add(int(item))
     except ValueError:
-        print(
-            f"警告：ADMIN_IDS 中无法识别：{item}"
-        )
+        print("警告：ADMIN_IDS 中无法识别：", item)
 return result
 
 ADMINS = get_admin_ids()
 
 def is_admin(user_id):
+try:
 return int(user_id) in ADMINS
+except Exception:
+return False
 
-============================================================
+=========================================================
 
-12 个系列
+12 个商品系列
 
-============================================================
+=========================================================
 
 CATS = {
 “c1”: “和天下系列”,
@@ -120,136 +120,193 @@ value: key
 for key, value in CATS.items()
 }
 
-============================================================
+def category_name(category):
+if not category:
+return “未分类”
 
-数据库
+if category in CATS:
+    return CATS[category]
+return str(category)
 
-============================================================
+=========================================================
 
-USE_POSTGRES = DATABASE_URL.startswith(“postgres”)
+数据库配置
+
+=========================================================
+
+USE_POSTGRES = DATABASE_URL.lower().startswith(
+(“postgres://”, “postgresql://”, “postgres”)
+)
 
 if USE_POSTGRES:
 try:
 import psycopg2
 from psycopg2.extras import RealDictCursor
 except Exception:
-print(
-“检测到 DATABASE_URL，但没有 psycopg2。”
-)
-print(
-“请安装 psycopg2-binary，程序将退出。”
-)
+print(“检测到 DATABASE_URL，但没有安装 psycopg2-binary。”)
 raise
 else:
 DB_FILE = BASE_DIR / “bot.db”
 
-============================================================
-
-数据库连接
-
-============================================================
-
 def db_connect():
-
 if USE_POSTGRES:
-    return psycopg2.connect(
-        DATABASE_URL,
-        cursor_factory=RealDictCursor
-    )
+return psycopg2.connect(
+DATABASE_URL,
+cursor_factory=RealDictCursor,
+)
+
 conn = sqlite3.connect(
     str(DB_FILE),
     timeout=30,
-    check_same_thread=False
+    check_same_thread=False,
 )
 conn.row_factory = sqlite3.Row
 return conn
 
 def placeholder():
+return “%s” if USE_POSTGRES else “?”
 
-return "%s" if USE_POSTGRES else "?"
-
-def now_sql():
-
-if USE_POSTGRES:
-    return "NOW()"
-return "CURRENT_TIMESTAMP"
-
-============================================================
+=========================================================
 
 数据库初始化
 
-============================================================
+=========================================================
 
 def init_db():
-
 conn = db_connect()
+
 try:
     cur = conn.cursor()
     if USE_POSTGRES:
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS products (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
-                code TEXT,
-                category TEXT,
-                price TEXT,
+                code TEXT DEFAULT '',
+                category TEXT DEFAULT '',
+                price TEXT DEFAULT '询价',
                 stock INTEGER DEFAULT 0,
                 description TEXT DEFAULT '',
                 active INTEGER DEFAULT 1,
                 photo_id TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
             )
-        """)
-        cur.execute("""
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS inquiries (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT,
-                username TEXT,
-                product TEXT,
-                message TEXT,
+                username TEXT DEFAULT '',
+                product TEXT DEFAULT '',
+                message TEXT DEFAULT '',
                 status TEXT DEFAULT 'new',
                 created_at TIMESTAMP DEFAULT NOW()
             )
-        """)
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE products
+            ADD COLUMN IF NOT EXISTS photo_id TEXT DEFAULT ''
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE products
+            ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE products
+            ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE products
+            ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 0
+            """
+        )
     else:
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                code TEXT,
-                category TEXT,
-                price TEXT,
+                code TEXT DEFAULT '',
+                category TEXT DEFAULT '',
+                price TEXT DEFAULT '询价',
                 stock INTEGER DEFAULT 0,
                 description TEXT DEFAULT '',
                 active INTEGER DEFAULT 1,
                 photo_id TEXT DEFAULT '',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
-        """)
-        cur.execute("""
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS inquiries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
-                username TEXT,
-                product TEXT,
-                message TEXT,
+                username TEXT DEFAULT '',
+                product TEXT DEFAULT '',
+                message TEXT DEFAULT '',
                 status TEXT DEFAULT 'new',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+            """
+        )
+        cur.execute("PRAGMA table_info(products)")
+        columns = {
+            row[1]
+            for row in cur.fetchall()
+        }
+        if "photo_id" not in columns:
+            cur.execute(
+                """
+                ALTER TABLE products
+                ADD COLUMN photo_id TEXT DEFAULT ''
+                """
+            )
+        if "active" not in columns:
+            cur.execute(
+                """
+                ALTER TABLE products
+                ADD COLUMN active INTEGER DEFAULT 1
+                """
+            )
+        if "description" not in columns:
+            cur.execute(
+                """
+                ALTER TABLE products
+                ADD COLUMN description TEXT DEFAULT ''
+                """
+            )
+        if "stock" not in columns:
+            cur.execute(
+                """
+                ALTER TABLE products
+                ADD COLUMN stock INTEGER DEFAULT 0
+                """
+            )
     conn.commit()
 finally:
     conn.close()
 
-============================================================
+=========================================================
 
-数据库查询
+数据库通用操作
 
-============================================================
+=========================================================
 
 def fetch_all(sql, params=()):
-
 conn = db_connect()
+
 try:
     cur = conn.cursor()
     cur.execute(sql, params)
@@ -259,8 +316,8 @@ finally:
     conn.close()
 
 def fetch_one(sql, params=()):
-
 conn = db_connect()
+
 try:
     cur = conn.cursor()
     cur.execute(sql, params)
@@ -272,39 +329,106 @@ finally:
     conn.close()
 
 def execute(sql, params=()):
-
 conn = db_connect()
+
 try:
     cur = conn.cursor()
     cur.execute(sql, params)
     conn.commit()
-    return cur
 finally:
     conn.close()
 
-============================================================
+def insert_product(
+name,
+code,
+category,
+price,
+stock,
+description,
+):
+conn = db_connect()
 
-商品数量
-
-============================================================
+try:
+    cur = conn.cursor()
+    if USE_POSTGRES:
+        cur.execute(
+            """
+            INSERT INTO products
+            (
+                name,
+                code,
+                category,
+                price,
+                stock,
+                description,
+                active
+            )
+            VALUES
+            (%s, %s, %s, %s, %s, %s, 1)
+            RETURNING id
+            """,
+            (
+                name,
+                code,
+                category,
+                price,
+                stock,
+                description,
+            ),
+        )
+        row = cur.fetchone()
+        product_id = row["id"]
+    else:
+        cur.execute(
+            """
+            INSERT INTO products
+            (
+                name,
+                code,
+                category,
+                price,
+                stock,
+                description,
+                active
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, 1)
+            """,
+            (
+                name,
+                code,
+                category,
+                price,
+                stock,
+                description,
+            ),
+        )
+        product_id = cur.lastrowid
+    conn.commit()
+    return int(product_id)
+finally:
+    conn.close()
 
 def product_count():
-
 row = fetch_one(
-    "SELECT COUNT(*) AS count FROM products"
+“””
+SELECT COUNT(*) AS count
+FROM products
+“””
 )
+
 return int(row["count"])
 
-============================================================
+=========================================================
 
-CSV 导入
+CSV 工具
 
-============================================================
+=========================================================
 
 def normalize_header(value):
-
 if value is None:
-    return ""
+return “”
+
 return (
     str(value)
     .replace("\ufeff", "")
@@ -314,12 +438,10 @@ return (
 )
 
 def find_csv_column(fieldnames, candidates):
-
 normalized = {}
-for field in fieldnames:
-    normalized[
-        normalize_header(field)
-    ] = field
+
+for field in fieldnames or []:
+    normalized[normalize_header(field)] = field
 for candidate in candidates:
     candidate = normalize_header(candidate)
     if candidate in normalized:
@@ -327,9 +449,9 @@ for candidate in candidates:
 return None
 
 def parse_stock(value):
-
 if value is None:
-    return 0
+return 0
+
 text = str(value).strip()
 if not text:
     return 0
@@ -339,780 +461,299 @@ except Exception:
     return 0
 
 def normalize_price(value):
-
 if value is None:
-    return ""
+return “”
+
 text = str(value).strip()
 if not text:
     return ""
-return text.replace("￥", "").replace("¥", "").strip()
+return (
+    text
+    .replace("￥", "")
+    .replace("¥", "")
+    .strip()
+)
 
 def import_csv_if_empty():
-
 if not CSV_FILE.exists():
-    print(
-        f"没有找到 CSV：{CSV_FILE}"
-    )
+
+    print("没有找到 CSV：", CSV_FILE)
     return 0
-count = product_count()
-if count > 0:
+current = product_count()
+if current > 0:
     print(
-        f"数据库已有 {count} 个商品，"
-        f"跳过 CSV 自动恢复。"
+        f"数据库已有 {current} 个商品，跳过 CSV 自动恢复。"
     )
-    return count
-print(
-    "数据库为空，开始从 93 商品 CSV 自动恢复..."
+    return current
+print("数据库为空，开始从 CSV 恢复商品……")
+rows = None
+fieldnames = None
+for encoding in (
+    "utf-8-sig",
+    "utf-8",
+    "gb18030",
+):
+    try:
+        with open(
+            CSV_FILE,
+            "r",
+            encoding=encoding,
+            newline="",
+        ) as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            rows = list(reader)
+        break
+    except Exception:
+        continue
+if not rows:
+    print("CSV 无法读取或为空。")
+    return 0
+name_col = find_csv_column(
+    fieldnames,
+    [
+        "名称",
+        "商品名称",
+        "商品",
+        "name",
+        "Name",
+    ],
 )
+code_col = find_csv_column(
+    fieldnames,
+    [
+        "编号",
+        "商品编号",
+        "编码",
+        "code",
+        "Code",
+    ],
+)
+category_col = find_csv_column(
+    fieldnames,
+    [
+        "分类",
+        "类别",
+        "系列",
+        "category",
+        "Category",
+    ],
+)
+price_col = find_csv_column(
+    fieldnames,
+    [
+        "价格",
+        "售价",
+        "报价",
+        "price",
+        "Price",
+    ],
+)
+stock_col = find_csv_column(
+    fieldnames,
+    [
+        "库存",
+        "stock",
+        "Stock",
+    ],
+)
+description_col = find_csv_column(
+    fieldnames,
+    [
+        "描述",
+        "商品描述",
+        "说明",
+        "description",
+        "Description",
+    ],
+)
+if not name_col:
+    print("CSV 中没有找到商品名称字段。")
+    print("CSV 字段：", fieldnames)
+    return 0
 inserted = 0
-with open(
-    CSV_FILE,
-    "r",
-    encoding="utf-8-sig",
-    newline=""
-) as f:
-    reader = csv.DictReader(f)
-    if not reader.fieldnames:
-        return 0
-    name_col = find_csv_column(
-        reader.fieldnames,
-        [
-            "名称",
-            "商品名称",
-            "商品",
-            "name",
-            "Name"
-        ]
+for row in rows:
+    name = str(
+        row.get(name_col, "")
+    ).strip()
+    if not name:
+        continue
+    code = (
+        str(row.get(code_col, "")).strip()
+        if code_col
+        else ""
     )
-    code_col = find_csv_column(
-        reader.fieldnames,
-        [
-            "编号",
-            "商品编号",
-            "编码",
-            "code",
-            "Code"
-        ]
-    )
-    category_col = find_csv_column(
-        reader.fieldnames,
-        [
-            "分类",
-            "类别",
-            "系列",
-            "category",
-            "Category"
-        ]
-    )
-    price_col = find_csv_column(
-        reader.fieldnames,
-        [
-            "价格",
-            "售价",
-            "报价",
-            "price",
-            "Price"
-        ]
-    )
-    stock_col = find_csv_column(
-        reader.fieldnames,
-        [
-            "库存",
-            "stock",
-            "Stock"
-        ]
-    )
-    description_col = find_csv_column(
-        reader.fieldnames,
-        [
-            "描述",
-            "商品描述",
-            "说明",
-            "description",
-            "Description"
-        ]
-    )
-    if not name_col:
-        print(
-            "CSV 中没有找到商品名称字段。"
-        )
-        print(
-            "CSV 字段：",
-            reader.fieldnames
-        )
-        return 0
-    for row in reader:
-        name = str(
-            row.get(name_col, "")
+    category = (
+        str(
+            row.get(category_col, "")
         ).strip()
-        if not name:
+        if category_col
+        else ""
+    )
+    price = (
+        normalize_price(
+            row.get(price_col, "")
+        )
+        if price_col
+        else ""
+    )
+    if not price:
+        price = "询价"
+    stock = (
+        parse_stock(
+            row.get(stock_col, "")
+        )
+        if stock_col
+        else 0
+    )
+    description = (
+        str(
+            row.get(description_col, "")
+        ).strip()
+        if description_col
+        else ""
+    )
+    if category in CAT_BY_NAME:
+        category = CAT_BY_NAME[category]
+    try:
+        ph = placeholder()
+        exists = fetch_one(
+            f"""
+            SELECT id
+            FROM products
+            WHERE name = {ph}
+            AND code = {ph}
+            LIMIT 1
+            """,
+            (
+                name,
+                code,
+            ),
+        )
+        if exists:
             continue
-        code = (
-            str(row.get(code_col, "")).strip()
-            if code_col else ""
+        insert_product(
+            name=name,
+            code=code,
+            category=category,
+            price=price,
+            stock=stock,
+            description=description,
         )
-        category = (
-            str(row.get(category_col, "")).strip()
-            if category_col else ""
-        )
-        price = (
-            normalize_price(
-                row.get(price_col, "")
-            )
-            if price_col else ""
-        )
-        stock = (
-            parse_stock(
-                row.get(stock_col, "")
-            )
-            if stock_col else 0
-        )
-        description = (
-            str(
-                row.get(description_col, "")
-            ).strip()
-            if description_col else ""
-        )
-        if category in CAT_BY_NAME:
-            category_value = CAT_BY_NAME[
-                category
-            ]
-        elif category in CATS:
-            category_value = category
-        else:
-            category_value = category
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            ph = placeholder()
-            cur.execute(
-                f"""
-                SELECT id
-                FROM products
-                WHERE name = {ph}
-                AND code = {ph}
-                LIMIT 1
-                """,
-                (
-                    name,
-                    code
-                )
-            )
-            exists = cur.fetchone()
-            if exists:
-                conn.rollback()
-                continue
-            if USE_POSTGRES:
-                cur.execute(
-                    """
-                    INSERT INTO products
-                    (
-                        name,
-                        code,
-                        category,
-                        price,
-                        stock,
-                        description,
-                        active
-                    )
-                    VALUES
-                    (%s,%s,%s,%s,%s,%s,1)
-                    """,
-                    (
-                        name,
-                        code,
-                        category_value,
-                        price,
-                        stock,
-                        description
-                    )
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO products
-                    (
-                        name,
-                        code,
-                        category,
-                        price,
-                        stock,
-                        description,
-                        active
-                    )
-                    VALUES
-                    (?,?,?,?,?,?,1)
-                    """,
-                    (
-                        name,
-                        code,
-                        category_value,
-                        price,
-                        stock,
-                        description
-                    )
-                )
-            conn.commit()
-            inserted += 1
-        except Exception:
-            conn.rollback()
-            print(
-                "导入商品失败：",
-                name
-            )
-        finally:
-            conn.close()
+        inserted += 1
+    except Exception:
+        traceback.print_exc()
+total = product_count()
 print(
-    f"CSV 自动恢复完成：新增 {inserted} 个商品"
+    f"CSV 自动恢复完成：新增 {inserted} 个商品，当前共 {total} 个商品。"
 )
-return product_count()
+return total
 
-============================================================
+=========================================================
 
-商品分类名称
+Telegram API
 
-============================================================
-
-def category_name(category):
-
-if not category:
-    return ""
-if category in CATS:
-    return CATS[category]
-return category
-
-============================================================
-
-Telegram Bot API
-
-============================================================
+=========================================================
 
 def telegram_api(method, payload):
-
 if not BOT_TOKEN:
-    raise RuntimeError(
-        "没有设置 BOT_TOKEN"
-    )
+return None
+
 url = (
-    f"https://api.telegram.org/"
+    "https://api.telegram.org/"
     f"bot{BOT_TOKEN}/{method}"
 )
 data = json.dumps(
-    payload
+    payload,
+    ensure_ascii=False,
 ).encode("utf-8")
 request = Request(
     url,
     data=data,
     headers={
-        "Content-Type":
-            "application/json"
+        "Content-Type": "application/json",
     },
-    method="POST"
+    method="POST",
 )
-with urlopen(
-    request,
-    timeout=30
-) as response:
-    return json.loads(
-        response.read()
+try:
+    with urlopen(
+        request,
+        timeout=30,
+    ) as response:
+        return json.loads(
+            response.read()
+        )
+except Exception as e:
+    print(
+        "Telegram API 错误：",
+        e,
     )
+    return None
 
 def telegram_get_file(file_id):
-
 result = telegram_api(
-    "getFile",
-    {
-        "file_id": file_id
-    }
+“getFile”,
+{
+“file_id”: file_id,
+},
 )
+
+if not result:
+    return None
 if not result.get("ok"):
-    raise RuntimeError(
-        "Telegram getFile 失败"
-    )
-return result["result"]["file_path"]
+    return None
+return result["result"].get("file_path")
 
-def download_telegram_file(file_id):
+=========================================================
 
-file_path = telegram_get_file(
-    file_id
-)
-url = (
-    f"https://api.telegram.org/"
-    f"file/bot{BOT_TOKEN}/"
-    f"{file_path}"
-)
-with urlopen(
-    url,
-    timeout=60
-) as response:
-    return response.read()
+商品图片
 
-============================================================
-
-图片 API
-
-============================================================
+=========================================================
 
 def get_product_photo(product_id):
+ph = placeholder()
 
-product = fetch_one(
-    """
+row = fetch_one(
+    f"""
     SELECT photo_id
     FROM products
-    WHERE id = ?
-    """
-    if not USE_POSTGRES
-    else
-    """
-    SELECT photo_id
-    FROM products
-    WHERE id = %s
+    WHERE id = {ph}
     """,
-    (product_id,)
+    (
+        product_id,
+    ),
 )
-if not product:
+if not row:
     return None
-photo_id = (
-    product.get("photo_id") or ""
+photo_id = str(
+    row.get("photo_id") or ""
 ).strip()
-if not photo_id:
-    return None
-return photo_id
+return photo_id or None
 
-============================================================
+=========================================================
 
-HTTP 服务
+HTTP Web 服务
 
-============================================================
+=========================================================
 
-class WebHandler(BaseHTTPRequestHandler):
+def run_http_server():
+server = ThreadingHTTPServer(
+(
+“0.0.0.0”,
+PORT,
+),
+WebHandler,
+)
 
-def log_message(
-    self,
-    format,
-    *args
-):
-    return
-def send_json(
-    self,
-    data,
-    status=200
-):
-    body = json.dumps(
-        data,
-        ensure_ascii=False
-    ).encode("utf-8")
-    self.send_response(status)
-    self.send_header(
-        "Content-Type",
-        "application/json; charset=utf-8"
-    )
-    self.send_header(
-        "Content-Length",
-        str(len(body))
-    )
-    self.send_header(
-        "Cache-Control",
-        "no-store"
-    )
-    self.end_headers()
-    self.wfile.write(body)
-def send_bytes(
-    self,
-    data,
-    content_type
-):
-    self.send_response(200)
-    self.send_header(
-        "Content-Type",
-        content_type
-    )
-    self.send_header(
-        "Content-Length",
-        str(len(data))
-    )
-    self.send_header(
-        "Cache-Control",
-        "public, max-age=3600"
-    )
-    self.end_headers()
-    self.wfile.write(data)
-def do_GET(self):
-    parsed = urlparse(
-        self.path
-    )
-    path = parsed.path
-    query = parse_qs(
-        parsed.query
-    )
-    # ----------------------------
-    # 首页
-    # ----------------------------
-    if path == "/":
-        index_file = (
-            BASE_DIR /
-            "web" /
-            "index.html"
-        )
-        if not index_file.exists():
-            self.send_json(
-                {
-                    "ok": False,
-                    "error":
-                        "web/index.html 不存在"
-                },
-                404
-            )
-            return
-        try:
-            data = index_file.read_bytes()
-            self.send_bytes(
-                data,
-                "text/html; charset=utf-8"
-            )
-        except Exception as e:
-            self.send_json(
-                {
-                    "ok": False,
-                    "error": str(e)
-                },
-                500
-            )
-        return
-    # ----------------------------
-    # 状态
-    # ----------------------------
-    if path == "/api/status":
-        total = fetch_one(
-            "SELECT COUNT(*) AS count FROM products"
-        )["count"]
-        active = fetch_one(
-            "SELECT COUNT(*) AS count "
-            "FROM products WHERE active = 1"
-        )["count"]
-        photos = fetch_one(
-            "SELECT COUNT(*) AS count "
-            "FROM products "
-            "WHERE photo_id IS NOT NULL "
-            "AND photo_id <> ''"
-        )["count"]
-        self.send_json(
-            {
-                "ok": True,
-                "database":
-                    (
-                        "PostgreSQL"
-                        if USE_POSTGRES
-                        else str(DB_FILE)
-                    ),
-                "total_products":
-                    int(total),
-                "active_products":
-                    int(active),
-                "products_with_photos":
-                    int(photos),
-                "csv_file":
-                    CSV_FILE.name,
-                "csv_exists":
-                    CSV_FILE.exists()
-            }
-        )
-        return
-    # ----------------------------
-    # 分类
-    # ----------------------------
-    if path == "/api/categories":
-        rows = fetch_all(
-            """
-            SELECT category, COUNT(*) AS count
-            FROM products
-            WHERE active = 1
-            GROUP BY category
-            ORDER BY category
-            """
-        )
-        result = []
-        for row in rows:
-            result.append(
-                {
-                    "id":
-                        row["category"],
-                    "name":
-                        category_name(
-                            row["category"]
-                        ),
-                    "count":
-                        int(row["count"])
-                }
-            )
-        self.send_json(result)
-        return
-    # ----------------------------
-    # 商品
-    # ----------------------------
-    if path == "/api/products":
-        active_only = (
-            query.get(
-                "active",
-                ["1"]
-            )[0]
-        )
-        if active_only == "1":
-            rows = fetch_all(
-                """
-                SELECT *
-                FROM products
-                WHERE active = 1
-                ORDER BY id DESC
-                """
-            )
-        else:
-            rows = fetch_all(
-                """
-                SELECT *
-                FROM products
-                ORDER BY id DESC
-                """
-            )
-        result = []
-        for row in rows:
-            item = dict(row)
-            item["category_name"] = (
-                category_name(
-                    item.get("category")
-                )
-            )
-            if item.get("photo_id"):
-                item["photo_url"] = (
-                    "/api/photo?id="
-                    + str(item["id"])
-                )
-            else:
-                item["photo_url"] = ""
-            result.append(item)
-        self.send_json(result)
-        return
-    # ----------------------------
-    # 商品图片
-    # ----------------------------
-    if path == "/api/photo":
-        raw_id = (
-            query.get("id", [""])[0]
-        )
-        try:
-            product_id = int(raw_id)
-        except Exception:
-            self.send_json(
-                {
-                    "ok": False,
-                    "error":
-                        "商品ID错误"
-                },
-                400
-            )
-            return
-        photo_id = get_product_photo(
-            product_id
-        )
-        if not photo_id:
-            self.send_json(
-                {
-                    "ok": False,
-                    "error":
-                        "商品没有图片"
-                },
-                404
-            )
-            return
-        try:
-            file_path = (
-                telegram_get_file(
-                    photo_id
-                )
-            )
-            url = (
-                f"https://api.telegram.org/"
-                f"file/bot{BOT_TOKEN}/"
-                f"{file_path}"
-            )
-            with urlopen(
-                url,
-                timeout=60
-            ) as response:
-                data = response.read()
-            content_type = (
-                mimetypes.guess_type(
-                    file_path
-                )[0]
-                or "image/jpeg"
-            )
-            self.send_bytes(
-                data,
-                content_type
-            )
-        except Exception as e:
-            print(
-                "图片读取失败：",
-                e
-            )
-            self.send_json(
-                {
-                    "ok": False,
-                    "error":
-                        "图片读取失败"
-                },
-                500
-            )
-        return
-    # ----------------------------
-    # favicon
-    # ----------------------------
-    if path == "/favicon.ico":
-        self.send_response(204)
-        self.end_headers()
-        return
-    self.send_json(
-        {
-            "ok": False,
-            "error": "Not Found"
-        },
-        404
-    )
-def do_POST(self):
-    parsed = urlparse(
-        self.path
-    )
-    path = parsed.path
-    # ----------------------------
-    # Mini App 询价
-    # ----------------------------
-    if path == "/api/inquiry":
-        try:
-            length = int(
-                self.headers.get(
-                    "Content-Length",
-                    "0"
-                )
-            )
-            raw = self.rfile.read(
-                length
-            )
-            data = json.loads(
-                raw.decode("utf-8")
-            )
-            product = str(
-                data.get(
-                    "product",
-                    ""
-                )
-            ).strip()
-            message = str(
-                data.get(
-                    "message",
-                    ""
-                )
-            ).strip()
-            if not product:
-                self.send_json(
-                    {
-                        "ok": False,
-                        "error":
-                            "没有商品"
-                    },
-                    400
-                )
-                return
-            user_id = 0
-            username = ""
-            execute(
-                """
-                INSERT INTO inquiries
-                (
-                    user_id,
-                    username,
-                    product,
-                    message,
-                    status
-                )
-                VALUES
-                (
-                    %s,%s,%s,%s,'new'
-                )
-                """
-                if USE_POSTGRES
-                else
-                """
-                INSERT INTO inquiries
-                (
-                    user_id,
-                    username,
-                    product,
-                    message,
-                    status
-                )
-                VALUES
-                (?,?,?,?, 'new')
-                """,
-                (
-                    user_id,
-                    username,
-                    product,
-                    message
-                )
-            )
-            self.send_json(
-                {
-                    "ok": True,
-                    "message":
-                        "询价已提交"
-                }
-            )
-            threading.Thread(
-                target=
-                    notify_admins_sync,
-                args=(
-                    product,
-                    message
-                ),
-                daemon=True
-            ).start()
-        except Exception as e:
-            print(
-                "询价接口错误：",
-                e
-            )
-            self.send_json(
-                {
-                    "ok": False,
-                    "error":
-                        "提交失败"
-                },
-                500
-            )
-        return
-    self.send_json(
-        {
-            "ok": False,
-            "error": "Not Found"
-        },
-        404
-    )
+print(
+    f"HTTP Server running on port {PORT}"
+)
+server.serve_forever()
 
-============================================================
-
-管理员通知
-
-============================================================
-
-def notify_admins_sync(
-product,
-message
-):
-
+def notify_admins_sync(product, message):
 if not ADMINS:
-    return
-if not BOT_TOKEN:
-    return
+return
+
 text = (
     "🔔 新询价\n\n"
     f"商品：{product}\n\n"
@@ -1123,23 +764,413 @@ for admin_id in ADMINS:
         telegram_api(
             "sendMessage",
             {
-                "chat_id":
-                    admin_id,
-                "text":
-                    text
-            }
+                "chat_id": admin_id,
+                "text": text,
+            },
+        )
+    except Exception:
+        traceback.print_exc()
+
+class WebHandler(BaseHTTPRequestHandler):
+
+def log_message(self, format, *args):
+    return
+def send_json(self, data, status=200):
+    body = json.dumps(
+        data,
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    self.send_response(status)
+    self.send_header(
+        "Content-Type",
+        "application/json; charset=utf-8",
+    )
+    self.send_header(
+        "Access-Control-Allow-Origin",
+        "*",
+    )
+    self.send_header(
+        "Content-Length",
+        str(len(body)),
+    )
+    self.end_headers()
+    self.wfile.write(body)
+def send_bytes(
+    self,
+    data,
+    content_type,
+    status=200,
+):
+    self.send_response(status)
+    self.send_header(
+        "Content-Type",
+        content_type,
+    )
+    self.send_header(
+        "Content-Length",
+        str(len(data)),
+    )
+    self.send_header(
+        "Cache-Control",
+        "public, max-age=3600",
+    )
+    self.end_headers()
+    self.wfile.write(data)
+def do_OPTIONS(self):
+    self.send_response(204)
+    self.send_header(
+        "Access-Control-Allow-Origin",
+        "*",
+    )
+    self.send_header(
+        "Access-Control-Allow-Methods",
+        "GET, POST, OPTIONS",
+    )
+    self.send_header(
+        "Access-Control-Allow-Headers",
+        "Content-Type",
+    )
+    self.end_headers()
+def do_GET(self):
+    parsed = urlparse(self.path)
+    path = parsed.path
+    query = parse_qs(parsed.query)
+    try:
+        # 首页
+        if path == "/":
+            index_file = (
+                BASE_DIR
+                / "web"
+                / "index.html"
+            )
+            if not index_file.exists():
+                self.send_json(
+                    {
+                        "ok": False,
+                        "error": "web/index.html 不存在",
+                    },
+                    404,
+                )
+                return
+            self.send_bytes(
+                index_file.read_bytes(),
+                "text/html; charset=utf-8",
+            )
+            return
+        # 系统状态
+        if path == "/api/status":
+            total = fetch_one(
+                """
+                SELECT COUNT(*) AS count
+                FROM products
+                """
+            )["count"]
+            active = fetch_one(
+                """
+                SELECT COUNT(*) AS count
+                FROM products
+                WHERE active = 1
+                """
+            )["count"]
+            photos = fetch_one(
+                """
+                SELECT COUNT(*) AS count
+                FROM products
+                WHERE photo_id IS NOT NULL
+                AND photo_id <> ''
+                """
+            )["count"]
+            self.send_json(
+                {
+                    "ok": True,
+                    "total_products": int(total),
+                    "active_products": int(active),
+                    "products_with_photos": int(photos),
+                    "csv_exists": CSV_FILE.exists(),
+                }
+            )
+            return
+        # 分类
+        if path == "/api/categories":
+            result = []
+            for code, name in CATS.items():
+                ph = placeholder()
+                row = fetch_one(
+                    f"""
+                    SELECT COUNT(*) AS count
+                    FROM products
+                    WHERE active = 1
+                    AND category = {ph}
+                    """,
+                    (
+                        code,
+                    ),
+                )
+                result.append(
+                    {
+                        "id": code,
+                        "name": name,
+                        "count": int(row["count"]),
+                    }
+                )
+            self.send_json(result)
+            return
+        # 商品
+        if path == "/api/products":
+            active_only = query.get(
+                "active",
+                ["1"],
+            )[0]
+            category = query.get(
+                "category",
+                [""],
+            )[0]
+            sql = """
+                SELECT
+                    id,
+                    name,
+                    code,
+                    category,
+                    price,
+                    stock,
+                    description,
+                    active,
+                    photo_id
+                FROM products
+            """
+            params = []
+            conditions = []
+            if active_only == "1":
+                conditions.append(
+                    "active = 1"
+                )
+            if category:
+                conditions.append(
+                    "category = " + placeholder()
+                )
+                params.append(category)
+            if conditions:
+                sql += (
+                    " WHERE "
+                    + " AND ".join(conditions)
+                )
+            sql += " ORDER BY id DESC"
+            rows = fetch_all(
+                sql,
+                tuple(params),
+            )
+            result = []
+            for row in rows:
+                item = dict(row)
+                item["category_name"] = category_name(
+                    item.get("category")
+                )
+                if item.get("photo_id"):
+                    item["photo_url"] = (
+                        "/api/photo?id="
+                        + str(item["id"])
+                    )
+                else:
+                    item["photo_url"] = ""
+                item.pop("photo_id", None)
+                result.append(item)
+            self.send_json(result)
+            return
+        # 商品图片
+        if path == "/api/photo":
+            raw_id = query.get(
+                "id",
+                [""],
+            )[0]
+            try:
+                product_id = int(raw_id)
+            except Exception:
+                self.send_json(
+                    {
+                        "ok": False,
+                        "error": "商品ID错误",
+                    },
+                    400,
+                )
+                return
+            photo_id = get_product_photo(
+                product_id
+            )
+            if not photo_id:
+                self.send_json(
+                    {
+                        "ok": False,
+                        "error": "商品没有图片",
+                    },
+                    404,
+                )
+                return
+            file_path = telegram_get_file(
+                photo_id
+            )
+            if not file_path:
+                self.send_json(
+                    {
+                        "ok": False,
+                        "error": "Telegram 图片不存在",
+                    },
+                    404,
+                )
+                return
+            file_url = (
+                "https://api.telegram.org/"
+                f"file/bot{BOT_TOKEN}/"
+                f"{file_path}"
+            )
+            with urlopen(
+                file_url,
+                timeout=60,
+            ) as response:
+                data = response.read()
+            content_type = (
+                mimetypes.guess_type(file_path)[0]
+                or "image/jpeg"
+            )
+            self.send_bytes(
+                data,
+                content_type,
+            )
+            return
+        # favicon
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+        self.send_json(
+            {
+                "ok": False,
+                "error": "Not Found",
+            },
+            404,
         )
     except Exception as e:
-        print(
-            "通知管理员失败：",
-            e
+        traceback.print_exc()
+        try:
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                500,
+            )
+        except Exception:
+            pass
+def do_POST(self):
+    parsed = urlparse(self.path)
+    if parsed.path != "/api/inquiry":
+        self.send_json(
+            {
+                "ok": False,
+                "error": "Not Found",
+            },
+            404,
+        )
+        return
+    try:
+        length = int(
+            self.headers.get(
+                "Content-Length",
+                "0",
+            )
+        )
+        if length <= 0 or length > 100000:
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": "请求数据无效",
+                },
+                400,
+            )
+            return
+        raw = self.rfile.read(length)
+        data = json.loads(
+            raw.decode("utf-8")
+        )
+        product = str(
+            data.get(
+                "product",
+                "",
+            )
+        ).strip()
+        message = str(
+            data.get(
+                "message",
+                "",
+            )
+        ).strip()
+        if not product:
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": "没有商品",
+                },
+                400,
+            )
+            return
+        if not message:
+            message = "客户未填写具体内容"
+        ph = placeholder()
+        execute(
+            f"""
+            INSERT INTO inquiries
+            (
+                user_id,
+                username,
+                product,
+                message,
+                status
+            )
+            VALUES
+            (
+                {ph},
+                {ph},
+                {ph},
+                {ph},
+                'new'
+            )
+            """,
+            (
+                0,
+                "",
+                product,
+                message,
+            ),
+        )
+        self.send_json(
+            {
+                "ok": True,
+                "message": "询价已提交",
+            }
+        )
+        threading.Thread(
+            target=notify_admins_sync,
+            args=(
+                product,
+                message,
+            ),
+            daemon=True,
+        ).start()
+    except Exception:
+        traceback.print_exc()
+        self.send_json(
+            {
+                "ok": False,
+                "error": "提交失败",
+            },
+            500,
         )
 
-============================================================
+=========================================================
 
-Bot 菜单
+Telegram 主菜单
 
-============================================================
+=========================================================
 
 def main_menu():
 
@@ -1147,45 +1178,60 @@ return ReplyKeyboardMarkup(
     [
         [
             "🛍️ 商品目录",
-            "📋 商品"
+            "📋 商品",
         ],
         [
             "💬 询价",
-            "➕ 添加商品"
+            "➕ 添加商品",
         ],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
-============================================================
+=========================================================
 
 /start
 
-============================================================
+=========================================================
 
 async def start(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
-text = (
-    "欢迎使用商品目录\n\n"
-    "请选择下面的功能："
-)
+context.user_data.clear()
 await update.message.reply_text(
-    text,
-    reply_markup=main_menu()
+    "欢迎使用商品目录机器人！\n\n"
+    "请选择下面的功能：",
+    reply_markup=main_menu(),
 )
 
-============================================================
+=========================================================
 
-商品目录按钮
+/cancel
 
-============================================================
+=========================================================
+
+async def cancel(
+update: Update,
+context: ContextTypes.DEFAULT_TYPE,
+):
+
+context.user_data.clear()
+await update.message.reply_text(
+    "✅ 当前操作已取消。",
+    reply_markup=main_menu(),
+)
+
+=========================================================
+
+商品目录
+
+=========================================================
 
 async def open_catalog(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 keyboard = InlineKeyboardMarkup(
@@ -1195,30 +1241,34 @@ keyboard = InlineKeyboardMarkup(
                 "🛍️ 打开商品目录",
                 web_app=WebAppInfo(
                     url=WEB_URL
-                )
+                ),
             )
         ]
     ]
 )
 await update.message.reply_text(
-    "点击下面打开商品目录：",
-    reply_markup=keyboard
+    "点击下面按钮打开商品目录：",
+    reply_markup=keyboard,
 )
 
-============================================================
+=========================================================
 
 商品列表
 
-============================================================
+=========================================================
 
 async def show_products(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 rows = fetch_all(
     """
-    SELECT *
+    SELECT
+        id,
+        name,
+        price,
+        stock
     FROM products
     WHERE active = 1
     ORDER BY id DESC
@@ -1226,61 +1276,46 @@ rows = fetch_all(
 )
 if not rows:
     await update.message.reply_text(
-        "目前没有商品。\n\n"
-        "管理员可以使用 /admin 管理商品。"
+        "目前没有商品。"
     )
     return
-text = "📦 商品列表\n\n"
 buttons = []
-for row in rows[:30]:
-    name = row["name"]
-    price = (
-        row["price"]
-        or "询价"
-    )
-    text += (
-        f"#{row['id']} "
-        f"{name} | "
-        f"{price}\n"
-    )
+for row in rows[:60]:
     buttons.append(
         [
             InlineKeyboardButton(
-                name[:30],
-                callback_data=
-                    f"product:{row['id']}"
+                str(row["name"])[:40],
+                callback_data=f"product:{row['id']}",
             )
         ]
     )
 await update.message.reply_text(
-    text,
-    reply_markup=
-        InlineKeyboardMarkup(
-            buttons
-        )
+    f"📦 商品列表\n\n"
+    f"当前共有 {len(rows)} 个商品：",
+    reply_markup=InlineKeyboardMarkup(
+        buttons
+    ),
 )
 
-============================================================
+=========================================================
 
-商品详情 Callback
+商品详情
 
-============================================================
+=========================================================
 
 async def product_callback(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 query = update.callback_query
 await query.answer()
-data = query.data
-if not data.startswith(
-    "product:"
-):
+try:
+    product_id = int(
+        query.data.split(":", 1)[1]
+    )
+except Exception:
     return
-product_id = int(
-    data.split(":", 1)[1]
-)
 ph = placeholder()
 row = fetch_one(
     f"""
@@ -1288,7 +1323,9 @@ row = fetch_one(
     FROM products
     WHERE id = {ph}
     """,
-    (product_id,)
+    (
+        product_id,
+    ),
 )
 if not row:
     await query.message.reply_text(
@@ -1298,25 +1335,21 @@ if not row:
 text = (
     f"📦 {row['name']}\n\n"
     f"编号：{row.get('code') or '-'}\n"
-    f"分类："
-    f"{category_name(row.get('category'))}\n"
-    f"价格："
-    f"{row.get('price') or '询价'}\n"
-    f"库存："
-    f"{row.get('stock', 0)}\n"
+    f"分类：{category_name(row.get('category'))}\n"
+    f"价格：{row.get('price') or '询价'}\n"
+    f"库存：{row.get('stock', 0)}"
 )
 if row.get("description"):
     text += (
-        "\n说明：\n"
-        f"{row['description']}"
+        "\n\n说明：\n"
+        + str(row["description"])
     )
 keyboard = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton(
                 "💬 我要询价",
-                callback_data=
-                    f"inquiry:{row['id']}"
+                callback_data=f"inquiry:{row['id']}",
             )
         ]
     ]
@@ -1326,69 +1359,96 @@ if row.get("photo_id"):
         await query.message.reply_photo(
             photo=row["photo_id"],
             caption=text,
-            reply_markup=keyboard
+            reply_markup=keyboard,
         )
         return
     except Exception as e:
         print(
             "发送商品图片失败：",
-            e
+            e,
         )
 await query.message.reply_text(
     text,
-    reply_markup=keyboard
+    reply_markup=keyboard,
 )
 
-============================================================
+=========================================================
 
-Telegram 询价
+询价按钮
 
-============================================================
+=========================================================
 
 async def inquiry_callback(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 query = update.callback_query
 await query.answer()
-product_id = int(
-    query.data.split(":", 1)[1]
-)
+try:
+    product_id = int(
+        query.data.split(":", 1)[1]
+    )
+except Exception:
+    return
 ph = placeholder()
-product = fetch_one(
+row = fetch_one(
     f"""
     SELECT *
     FROM products
     WHERE id = {ph}
     """,
-    (product_id,)
+    (
+        product_id,
+    ),
 )
-if not product:
+if not row:
     await query.message.reply_text(
         "商品不存在。"
     )
     return
-context.user_data[
-    "inquiry_product"
-] = product["name"]
+context.user_data["inquiry_product"] = row["name"]
 await query.message.reply_text(
     "请输入您的询价内容。\n\n"
     "例如：\n"
-    "需要10件，请报价\n\n"
-    "也可以直接发送：\n"
-    "数量 + 联系方式"
+    "需要10件，请报价。\n\n"
+    "输入 /cancel 可以取消。"
 )
 
-============================================================
+=========================================================
 
-普通消息
+添加商品
 
-============================================================
+=========================================================
+
+async def start_add_product(
+update: Update,
+context: ContextTypes.DEFAULT_TYPE,
+):
+
+if not is_admin(update.effective_user.id):
+    await update.message.reply_text(
+        "没有管理员权限。"
+    )
+    return
+context.user_data["adding_product"] = True
+await update.message.reply_text(
+    "请输入商品信息：\n\n"
+    "名称|编号|分类|价格|库存|描述\n\n"
+    "例如：\n"
+    "软和天下|HT001|c1|350|20|软和天下\n\n"
+    "输入 /cancel 可以取消。"
+)
+
+=========================================================
+
+普通文字处理
+
+=========================================================
 
 async def message_handler(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 if not update.message:
@@ -1396,27 +1456,53 @@ if not update.message:
 text = (
     update.message.text or ""
 ).strip()
-# --------------------------------
-# 正在询价
-# --------------------------------
-inquiry_product = (
-    context.user_data.get(
-        "inquiry_product"
+user = update.effective_user
+# -----------------------------------------------------
+# 等待商品图片
+# -----------------------------------------------------
+waiting_photo_id = context.user_data.get(
+    "waiting_photo_product_id"
+)
+if waiting_photo_id:
+    if text == "跳过":
+        context.user_data.pop(
+            "waiting_photo_product_id",
+            None,
+        )
+        await update.message.reply_text(
+            "✅ 已跳过商品图片。\n"
+            "商品添加完成。",
+            reply_markup=main_menu(),
+        )
+        return
+    await update.message.reply_text(
+        "请发送商品图片。\n"
+        "如果不需要图片，请发送：跳过\n\n"
+        "输入 /cancel 可以取消。"
     )
+    return
+# -----------------------------------------------------
+# 正在询价
+# -----------------------------------------------------
+inquiry_product = context.user_data.get(
+    "inquiry_product"
 )
 if inquiry_product:
-    user = update.effective_user
+    if not text:
+        return
     username = (
         user.username
-        or ""
+        or user.full_name
+        or "未知"
     )
     user_id = (
         user.id
         if user
         else 0
     )
+    ph = placeholder()
     execute(
-        """
+        f"""
         INSERT INTO inquiries
         (
             user_id,
@@ -1426,36 +1512,29 @@ if inquiry_product:
             status
         )
         VALUES
-        (%s,%s,%s,%s,'new')
-        """
-        if USE_POSTGRES
-        else
-        """
-        INSERT INTO inquiries
         (
-            user_id,
-            username,
-            product,
-            message,
-            status
+            {ph},
+            {ph},
+            {ph},
+            {ph},
+            'new'
         )
-        VALUES
-        (?,?,?,?, 'new')
         """,
         (
             user_id,
             username,
             inquiry_product,
-            text
-        )
+            text,
+        ),
     )
     context.user_data.pop(
         "inquiry_product",
-        None
+        None,
     )
     await update.message.reply_text(
         "✅ 询价已提交。\n"
-        "我们会尽快联系您。"
+        "我们会尽快联系您。",
+        reply_markup=main_menu(),
     )
     for admin_id in ADMINS:
         try:
@@ -1463,87 +1542,68 @@ if inquiry_product:
                 chat_id=admin_id,
                 text=(
                     "🔔 新询价\n\n"
-                    f"商品："
-                    f"{inquiry_product}\n\n"
-                    f"客户："
-                    f"@{username or '未知'}\n"
-                    f"用户ID："
-                    f"{user_id}\n\n"
-                    f"内容：\n"
-                    f"{text}"
-                )
+                    f"商品：{inquiry_product}\n\n"
+                    f"客户：@{username}\n"
+                    f"用户ID：{user_id}\n\n"
+                    f"内容：\n{text}"
+                ),
             )
         except Exception as e:
             print(
                 "管理员通知失败：",
-                e
+                e,
             )
     return
-# --------------------------------
-# 菜单
-# --------------------------------
+# -----------------------------------------------------
+# 主菜单
+# -----------------------------------------------------
 if text in (
     "🛍️ 商品目录",
     "商品目录",
-    "小程序"
+    "小程序",
 ):
     await open_catalog(
         update,
-        context
+        context,
     )
     return
 if text in (
     "📋 商品",
-    "商品"
+    "商品",
 ):
     await show_products(
         update,
-        context
+        context,
     )
     return
 if text in (
     "💬 询价",
-    "询价"
+    "询价",
 ):
     await update.message.reply_text(
-        "请先打开商品目录，"
-        "选择商品后点击“立即询价”。"
+        "请先选择商品，然后点击“我要询价”。"
     )
     return
 if text in (
     "➕ 添加商品",
-    "添加商品"
+    "添加商品",
 ):
-    if not is_admin(
-        update.effective_user.id
-    ):
-        await update.message.reply_text(
-            "没有管理员权限。"
-        )
-        return
-    context.user_data[
-        "adding_product"
-    ] = True
-    await update.message.reply_text(
-        "请输入商品信息：\n\n"
-        "名称|编号|分类|价格|库存|描述\n\n"
-        "例如：\n"
-        "软和天下|HT001|和天下系列|350|20|软和天下"
+    await start_add_product(
+        update,
+        context,
     )
     return
-# --------------------------------
+# -----------------------------------------------------
 # 添加商品
-# --------------------------------
+# -----------------------------------------------------
 if context.user_data.get(
     "adding_product"
 ):
-    if not is_admin(
-        update.effective_user.id
-    ):
+    if not is_admin(user.id):
         return
     parts = [
-        x.strip()
-        for x in text.split("|")
+        item.strip()
+        for item in text.split("|")
     ]
     if len(parts) < 5:
         await update.message.reply_text(
@@ -1558,137 +1618,140 @@ if context.user_data.get(
     price = parts[3]
     stock = parse_stock(parts[4])
     description = (
-        parts[5]
+        "|".join(parts[5:])
         if len(parts) > 5
         else ""
     )
     if category in CAT_BY_NAME:
-        category = CAT_BY_NAME[
-            category
-        ]
+        category = CAT_BY_NAME[category]
     if category not in CATS:
         await update.message.reply_text(
             "分类不正确。\n\n"
-            "可用分类：\n" +
-            "\n".join(
-                CATS.values()
+            "可用分类：\n"
+            + "\n".join(
+                f"{code} = {name}"
+                for code, name in CATS.items()
             )
         )
         return
-    execute(
-        """
-        INSERT INTO products
-        (
-            name,
-            code,
-            category,
-            price,
-            stock,
-            description,
-            active
+    if not name:
+        await update.message.reply_text(
+            "商品名称不能为空。"
         )
-        VALUES
-        (%s,%s,%s,%s,%s,%s,1)
-        """
-        if USE_POSTGRES
-        else
-        """
-        INSERT INTO products
-        (
-            name,
-            code,
-            category,
-            price,
-            stock,
-            description,
-            active
+        return
+    try:
+        product_id = insert_product(
+            name=name,
+            code=code,
+            category=category,
+            price=price or "询价",
+            stock=stock,
+            description=description,
         )
-        VALUES
-        (?,?,?,?,?, ?,1)
-        """,
-        (
-            name,
-            code,
-            category,
-            price,
-            stock,
-            description
+        context.user_data.pop(
+            "adding_product",
+            None,
         )
-    )
-    context.user_data.pop(
-        "adding_product",
-        None
-    )
-    await update.message.reply_text(
-        "✅ 商品添加成功。"
-    )
+        context.user_data[
+            "waiting_photo_product_id"
+        ] = product_id
+        await update.message.reply_text(
+            "✅ 商品添加成功。\n\n"
+            f"商品ID：#{product_id}\n"
+            f"商品：{name}\n\n"
+            "请发送商品图片。\n"
+            "如果不需要图片，请发送：跳过"
+        )
+    except Exception as e:
+        traceback.print_exc()
+        await update.message.reply_text(
+            "❌ 商品添加失败：\n"
+            + str(e)
+        )
     return
+await update.message.reply_text(
+    "请选择下面功能：",
+    reply_markup=main_menu(),
+)
 
-============================================================
+=========================================================
 
-接收图片
+商品图片上传
 
-============================================================
+=========================================================
 
 async def photo_handler(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 if not update.message:
     return
-# 如果正在添加商品
-if context.user_data.get(
+product_id = context.user_data.get(
     "waiting_photo_product_id"
-):
-    product_id = context.user_data[
-        "waiting_photo_product_id"
-    ]
-    photo = update.message.photo
-    if not photo:
-        return
-    # 修正：原代码这里被截断
-    telegram_photo = photo[-1]
-    photo_id = telegram_photo.file_id
-    ph = placeholder()
-    execute(
-        f"""
-        UPDATE products
-        SET photo_id = {ph}
-        WHERE id = {ph}
-        """,
-        (
-            photo_id,
-            product_id
+)
+if not product_id:
+    if is_admin(update.effective_user.id):
+        await update.message.reply_text(
+            "目前没有等待图片的商品。"
         )
-    )
-    context.user_data.pop(
-        "waiting_photo_product_id",
-        None
-    )
-    await update.message.reply_text(
-        "✅ 商品图片已保存。"
-    )
     return
+photo = update.message.photo
+if not photo:
+    return
+telegram_photo = photo[-1]
+photo_id = telegram_photo.file_id
+ph = placeholder()
+execute(
+    f"""
+    UPDATE products
+    SET photo_id = {ph}
+    WHERE id = {ph}
+    """,
+    (
+        photo_id,
+        product_id,
+    ),
+)
+product = fetch_one(
+    f"""
+    SELECT name
+    FROM products
+    WHERE id = {ph}
+    """,
+    (
+        product_id,
+    ),
+)
+context.user_data.pop(
+    "waiting_photo_product_id",
+    None,
+)
+name = (
+    product["name"]
+    if product
+    else "商品"
+)
 await update.message.reply_text(
-    "如果是商品图片，请先通过管理员商品管理流程上传。"
+    "✅ 商品图片已保存。\n\n"
+    f"商品：{name}\n"
+    f"商品ID：#{product_id}\n\n"
+    "商品已经完成添加。",
+    reply_markup=main_menu(),
 )
 
-============================================================
+=========================================================
 
-/admin
+管理员后台
 
-============================================================
+=========================================================
 
 async def admin(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
-user_id = (
-    update.effective_user.id
-)
-if not is_admin(user_id):
+if not is_admin(update.effective_user.id):
     await update.message.reply_text(
         "没有管理员权限。"
     )
@@ -1699,60 +1762,58 @@ keyboard = InlineKeyboardMarkup(
         [
             InlineKeyboardButton(
                 "📦 商品列表",
-                callback_data="admin:list"
+                callback_data="admin:list",
             )
         ],
         [
             InlineKeyboardButton(
                 "📊 系统状态",
-                callback_data="admin:status"
+                callback_data="admin:status",
             )
         ],
         [
             InlineKeyboardButton(
                 "📥 CSV恢复商品",
-                callback_data="admin:importcsv"
+                callback_data="admin:importcsv",
             )
         ],
         [
             InlineKeyboardButton(
-                "📋 查看询价",
-                callback_data="admin:inquiries"
+                "💬 查看询价",
+                callback_data="admin:inquiries",
             )
-        ]
+        ],
     ]
 )
 await update.message.reply_text(
     "🔐 管理员后台\n\n"
     f"当前商品：{total}\n\n"
     "请选择操作：",
-    reply_markup=keyboard
+    reply_markup=keyboard,
 )
 
-============================================================
+=========================================================
 
 管理员 Callback
 
-============================================================
+=========================================================
 
 async def admin_callback(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 query = update.callback_query
 await query.answer()
-if not is_admin(
-    query.from_user.id
-):
+if not is_admin(query.from_user.id):
     await query.message.reply_text(
         "没有管理员权限。"
     )
     return
 data = query.data
-# --------------------------------
-# 状态
-# --------------------------------
+# -----------------------------------------------------
+# 系统状态
+# -----------------------------------------------------
 if data == "admin:status":
     total = product_count()
     active = fetch_one(
@@ -1772,20 +1833,27 @@ if data == "admin:status":
     )["count"]
     await query.message.reply_text(
         "📊 系统状态\n\n"
-        f"商品总数：{total}\n"
-        f"上架商品：{active}\n"
-        f"有图片：{photos}\n"
+        f"商品总数：{int(total)}\n"
+        f"上架商品：{int(active)}\n"
+        f"有图片：{int(photos)}\n"
         f"数据库："
-        f"{'PostgreSQL' if USE_POSTGRES else 'SQLite'}"
+        + (
+            "PostgreSQL"
+            if USE_POSTGRES
+            else "SQLite"
+        )
+        + "\n"
+        f"WEB：{WEB_URL}"
     )
     return
-# --------------------------------
-# CSV
-# --------------------------------
+# -----------------------------------------------------
+# CSV 恢复
+# -----------------------------------------------------
 if data == "admin:importcsv":
     if not CSV_FILE.exists():
         await query.message.reply_text(
-            "找不到 93 商品 CSV。"
+            "找不到 93 商品 CSV 文件：\n"
+            f"{CSV_FILE.name}"
         )
         return
     before = product_count()
@@ -1794,17 +1862,23 @@ if data == "admin:importcsv":
     else:
         after = before
     await query.message.reply_text(
-        "✅ CSV恢复检查完成。\n\n"
+        "✅ CSV 恢复检查完成。\n\n"
         f"商品数量：{after}"
     )
     return
-# --------------------------------
+# -----------------------------------------------------
 # 商品列表
-# --------------------------------
+# -----------------------------------------------------
 if data == "admin:list":
     rows = fetch_all(
         """
-        SELECT id,name,category,price,stock,photo_id
+        SELECT
+            id,
+            name,
+            category,
+            price,
+            stock,
+            photo_id
         FROM products
         ORDER BY id
         """
@@ -1815,7 +1889,8 @@ if data == "admin:list":
         )
         return
     lines = [
-        "📦 商品列表\n"
+        "📦 商品列表",
+        "",
     ]
     for row in rows:
         photo_mark = (
@@ -1830,19 +1905,18 @@ if data == "admin:list":
             f"| {row.get('price') or '询价'}"
         )
     text = "\n".join(lines)
-    # Telegram 单条消息有限制
     for i in range(
         0,
         len(text),
-        3500
+        3500,
     ):
         await query.message.reply_text(
-            text[i:i+3500]
+            text[i:i + 3500]
         )
     return
-# --------------------------------
+# -----------------------------------------------------
 # 询价
-# --------------------------------
+# -----------------------------------------------------
 if data == "admin:inquiries":
     rows = fetch_all(
         """
@@ -1858,37 +1932,133 @@ if data == "admin:inquiries":
         )
         return
     lines = [
-        "💬 最近询价\n"
+        "💬 最近询价",
+        "",
     ]
     for row in rows:
+        username = row.get("username") or "-"
         lines.append(
             f"#{row['id']} "
-            f"{row['product']}\n"
-            f"{row['message']}\n"
-            f"状态：{row['status']}\n"
+            f"{row.get('product') or '-'}\n"
+            f"客户：{username}\n"
+            f"{row.get('message') or '-'}\n"
+            f"状态：{row.get('status') or '-'}\n"
         )
     text = "\n".join(lines)
-    await query.message.reply_text(
-        text[:3900]
-    )
+    for i in range(
+        0,
+        len(text),
+        3500,
+    ):
+        await query.message.reply_text(
+            text[i:i + 3500]
+        )
     return
 
-============================================================
+=========================================================
 
-ZIP 图片后台处理
+ZIP 图片匹配
 
-============================================================
+=========================================================
+
+def normalize_match_text(value):
+value = str(value or “”).lower()
+
+value = re.sub(
+    r"[\s_\-—–.()（）\[\]【】]+",
+    "",
+    value,
+)
+return value
+
+def normalize_filename(filename):
+return normalize_match_text(
+Path(str(filename)).stem
+)
+
+def find_product_for_filename(
+filename,
+products,
+):
+
+target = normalize_filename(filename)
+if not target:
+    return None
+# 1. 商品 ID
+for product in products:
+    if str(product["id"]) == target:
+        return product
+# 2. 商品编号
+for product in products:
+    code = normalize_match_text(
+        product.get("code")
+    )
+    if code and code == target:
+        return product
+# 3. 商品名称完全匹配
+for product in products:
+    name = normalize_match_text(
+        product.get("name")
+    )
+    if name and name == target:
+        return product
+# 4. 文件名包含编号
+for product in products:
+    code = normalize_match_text(
+        product.get("code")
+    )
+    if code and code in target:
+        return product
+# 5. 文件名包含商品名称
+for product in products:
+    name = normalize_match_text(
+        product.get("name")
+    )
+    if name and name in target:
+        return product
+return None
+
+=========================================================
+
+ZIP 安全解压
+
+=========================================================
+
+def safe_extract_zip(
+zip_path,
+extract_dir,
+):
+
+root = extract_dir.resolve()
+with zipfile.ZipFile(
+    zip_path,
+    "r",
+) as z:
+    for member in z.infolist():
+        target = (
+            extract_dir
+            / member.filename
+        ).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError(
+                "ZIP 中存在非法文件路径。"
+            )
+    z.extractall(extract_dir)
+
+=========================================================
+
+ZIP 上传
+
+=========================================================
 
 async def zip_document_handler(
 update: Update,
-context: ContextTypes.DEFAULT_TYPE
+context: ContextTypes.DEFAULT_TYPE,
 ):
 
 if not update.message:
     return
-user_id = (
-    update.effective_user.id
-)
+user_id = update.effective_user.id
 if not is_admin(user_id):
     await update.message.reply_text(
         "没有管理员权限。"
@@ -1897,13 +2067,11 @@ if not is_admin(user_id):
 document = update.message.document
 if not document:
     return
-file_name = (
+filename = (
     document.file_name
     or "products.zip"
 )
-if not file_name.lower().endswith(
-    ".zip"
-):
+if not filename.lower().endswith(".zip"):
     await update.message.reply_text(
         "请发送 ZIP 文件。"
     )
@@ -1913,12 +2081,8 @@ temp_dir = Path(
         prefix="catalog_zip_"
     )
 )
-zip_path = (
-    temp_dir /
-    file_name
-)
+zip_path = temp_dir / "images.zip"
 try:
-    # 修正：原代码这里被截断
     telegram_file = await context.bot.get_file(
         document.file_id
     )
@@ -1928,218 +2092,132 @@ try:
     await update.message.reply_text(
         "✅ ZIP 已收到。\n\n"
         "正在后台处理图片，请不要重复上传。\n"
-        "处理完成后我会通知你。"
+        "处理完成后会通知你。"
     )
     context.application.create_task(
         process_zip_background(
             context.bot,
             update.effective_chat.id,
             zip_path,
-            temp_dir
+            temp_dir,
         )
     )
 except Exception as e:
-    print(
-        "ZIP接收失败：",
-        traceback.format_exc()
-    )
+    traceback.print_exc()
     shutil.rmtree(
         temp_dir,
-        ignore_errors=True
+        ignore_errors=True,
     )
     await update.message.reply_text(
-        "❌ ZIP 接收失败："
-        f"{str(e)[:300]}"
+        "❌ ZIP 接收失败：\n"
+        + str(e)
     )
 
-============================================================
+=========================================================
 
 ZIP 后台处理
 
-============================================================
+=========================================================
 
 async def process_zip_background(
 bot,
 chat_id,
 zip_path,
-temp_dir
+temp_dir,
 ):
 
 success = 0
 failed = 0
 skipped = 0
 try:
-    extract_dir = (
-        temp_dir /
-        "extracted"
-    )
+    extract_dir = temp_dir / "extracted"
     extract_dir.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
-    # ----------------------------
-    # 解压
-    # ----------------------------
-    with zipfile.ZipFile(
+    # -------------------------------------------------
+    # 安全解压
+    # -------------------------------------------------
+    safe_extract_zip(
         zip_path,
-        "r"
-    ) as z:
-        z.extractall(
-            extract_dir
-        )
-    # ----------------------------
+        extract_dir,
+    )
+    # -------------------------------------------------
     # 找图片
-    # ----------------------------
+    # -------------------------------------------------
+    allowed = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+    }
     image_files = []
     for file in extract_dir.rglob("*"):
         if not file.is_file():
             continue
-        suffix = (
-            file.suffix.lower()
-        )
-        if suffix in (
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".webp"
-        ):
+        if file.suffix.lower() in allowed:
             image_files.append(file)
     if not image_files:
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                "❌ ZIP 里没有找到 "
-                "JPG / PNG / WEBP 图片。"
-            )
+                "❌ ZIP 里面没有找到图片。\n\n"
+                "支持：JPG、JPEG、PNG、WEBP"
+            ),
         )
         return
-    # ----------------------------
-    # 获取商品
-    # ----------------------------
-    rows = fetch_all(
+    # -------------------------------------------------
+    # 商品
+    # -------------------------------------------------
+    products = fetch_all(
         """
-        SELECT id,name,code
+        SELECT
+            id,
+            name,
+            code
         FROM products
         ORDER BY id
         """
     )
-    if not rows:
+    if not products:
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                "❌ 当前数据库没有商品。\n\n"
-                "请先恢复 93 个商品 CSV，"
-                "再上传图片 ZIP。"
-            )
+                "❌ 当前没有商品。\n\n"
+                "请先恢复商品。"
+            ),
         )
         return
-    # ----------------------------
-    # 商品匹配
-    # ----------------------------
-    def normalized(text):
-        return "".join(
-            str(text or "")
-            .lower()
-            .split()
-        )
-    product_map = {}
-    for product in rows:
-        pid = str(
-            product["id"]
-        )
-        name = normalized(
-            product["name"]
-        )
-        code = normalized(
-            product["code"]
-        )
-        product_map[pid] = product
-        if code:
-            product_map[
-                "code:" + code
-            ] = product
-        if name:
-            product_map[
-                "name:" + name
-            ] = product
-    # ----------------------------
-    # 逐张处理
-    # ----------------------------
+    # -------------------------------------------------
+    # 逐张匹配并上传
+    # -------------------------------------------------
     for image_file in image_files:
         try:
-            stem = normalized(
-                image_file.stem
+            product = find_product_for_filename(
+                image_file.name,
+                products,
             )
-            product = None
-            # 1. 商品ID
-            if stem in product_map:
-                product = product_map[
-                    stem
-                ]
-            # 2. 编号
-            if not product:
-                product = product_map.get(
-                    "code:" + stem
-                )
-            # 3. 商品名称
-            if not product:
-                product = product_map.get(
-                    "name:" + stem
-                )
-            # 4. 包含编号
-            if not product:
-                for key, item in product_map.items():
-                    if not key.startswith(
-                        "code:"
-                    ):
-                        continue
-                    code = key[5:]
-                    if (
-                        code
-                        and code in stem
-                    ):
-                        product = item
-                        break
-            # 5. 包含商品名称
-            if not product:
-                for key, item in product_map.items():
-                    if not key.startswith(
-                        "name:"
-                    ):
-                        continue
-                    name = key[5:]
-                    if (
-                        name
-                        and name in stem
-                    ):
-                        product = item
-                        break
             if not product:
                 skipped += 1
                 continue
-            # ------------------------
-            # 上传到 Telegram
-            # ------------------------
             with open(
                 image_file,
-                "rb"
+                "rb",
             ) as f:
-                message = (
-                    await bot.send_photo(
-                        chat_id=chat_id,
-                        photo=f,
-                        caption=(
-                            "商品图片："
-                            f"{product['name']}"
-                        )
-                    )
+                message = await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=f,
+                    caption=(
+                        "商品图片："
+                        f"{product['name']}\n"
+                        f"商品ID：#{product['id']}"
+                    ),
                 )
             if not message.photo:
                 failed += 1
                 continue
-            photo_id = (
-                message.photo[-1].file_id
-            )
+            telegram_photo = message.photo[-1]
+            photo_id = telegram_photo.file_id
             ph = placeholder()
             execute(
                 f"""
@@ -2149,210 +2227,230 @@ try:
                 """,
                 (
                     photo_id,
-                    product["id"]
-                )
+                    product["id"],
+                ),
             )
             success += 1
-            # 避免一次性发送过快
-            await asyncio.sleep(
-                0.15
-            )
+            await asyncio.sleep(0.25)
         except Exception as e:
             failed += 1
             print(
                 "图片处理失败：",
                 image_file,
-                e
+                e,
             )
-    # ----------------------------
-    # 完成通知
-    # ----------------------------
+    # -------------------------------------------------
+    # 完成
+    # -------------------------------------------------
     await bot.send_message(
         chat_id=chat_id,
         text=(
             "✅ ZIP 图片处理完成\n\n"
-            f"成功：{success}\n"
-            f"跳过：{skipped}\n"
+            f"图片总数：{len(image_files)}\n"
+            f"成功匹配：{success}\n"
+            f"未匹配：{skipped}\n"
             f"失败：{failed}\n\n"
             "现在可以打开商品目录检查图片。"
-        )
+        ),
     )
 except Exception:
-    print(
-        "ZIP后台处理失败："
-    )
-    print(
-        traceback.format_exc()
-    )
+    traceback.print_exc()
     try:
         await bot.send_message(
             chat_id=chat_id,
             text=(
                 "❌ ZIP 后台处理失败。\n\n"
-                "请把这条消息截图发给我。"
-            )
+                "请查看 Render Logs。"
+            ),
         )
     except Exception:
         pass
 finally:
     shutil.rmtree(
         temp_dir,
-        ignore_errors=True
+        ignore_errors=True,
     )
 
-============================================================
+=========================================================
 
-HTTP Server
+错误处理
 
-============================================================
+=========================================================
 
-def run_http_server():
+async def error_handler(
+update,
+context,
+):
 
-server = ThreadingHTTPServer(
-    (
-        "0.0.0.0",
-        PORT
-    ),
-    WebHandler
-)
-print(
-    f"HTTP server running on port {PORT}"
-)
-server.serve_forever()
+print("Telegram Bot Error:")
+if context.error:
+    traceback.print_exception(
+        type(context.error),
+        context.error,
+        context.error.__traceback__,
+    )
 
-============================================================
+=========================================================
 
 主程序
 
-============================================================
+=========================================================
 
 def main():
 
 if not BOT_TOKEN:
     raise RuntimeError(
-        "请在 Render Environment "
-        "设置 BOT_TOKEN"
+        "请在 Render Environment Variables 设置 BOT_TOKEN"
     )
-print("=" * 50)
+print("=" * 60)
 print(
     "Telegram 商品目录 Bot 启动"
 )
 print(
-    "数据库：",
+    "WEB_URL:",
+    WEB_URL,
+)
+print(
+    "PORT:",
+    PORT,
+)
+print(
+    "DATABASE:",
     (
         "PostgreSQL"
         if USE_POSTGRES
         else str(DB_FILE)
-    )
+    ),
 )
 print(
-    "CSV：",
-    CSV_FILE
+    "ADMIN_IDS:",
+    ADMINS,
 )
-print(
-    "WEB_URL：",
-    WEB_URL
-)
-print(
-    "管理员：",
-    ADMINS
-)
-print("=" * 50)
-# ----------------------------
+print("=" * 60)
+# -----------------------------------------------------
 # 数据库
-# ----------------------------
+# -----------------------------------------------------
 init_db()
-# ----------------------------
-# 自动恢复 CSV
-# ----------------------------
-import_csv_if_empty()
+# -----------------------------------------------------
+# CSV 自动恢复
+# -----------------------------------------------------
+try:
+    import_csv_if_empty()
+except Exception:
+    traceback.print_exc()
 print(
     "当前商品数量：",
-    product_count()
+    product_count(),
 )
-# ----------------------------
-# HTTP
-# ----------------------------
+# -----------------------------------------------------
+# HTTP 服务
+# -----------------------------------------------------
 http_thread = threading.Thread(
     target=run_http_server,
-    daemon=True
+    daemon=True,
 )
 http_thread.start()
-# ----------------------------
-# Telegram
-# ----------------------------
+# -----------------------------------------------------
+# Telegram Application
+# -----------------------------------------------------
 application = (
     Application.builder()
     .token(BOT_TOKEN)
     .build()
 )
-# 基础命令
+# -----------------------------------------------------
+# Commands
+# -----------------------------------------------------
 application.add_handler(
     CommandHandler(
         "start",
-        start
+        start,
     )
 )
 application.add_handler(
     CommandHandler(
         "admin",
-        admin
+        admin,
     )
 )
-# 文本
 application.add_handler(
-    MessageHandler(
-        filters.TEXT &
-        ~filters.COMMAND,
-        message_handler
+    CommandHandler(
+        "cancel",
+        cancel,
     )
 )
-# 图片
+# -----------------------------------------------------
+# 商品图片
+# -----------------------------------------------------
 application.add_handler(
     MessageHandler(
         filters.PHOTO,
-        photo_handler
+        photo_handler,
     )
 )
+# -----------------------------------------------------
 # ZIP
+# -----------------------------------------------------
 application.add_handler(
     MessageHandler(
         filters.Document.ALL,
-        zip_document_handler
+        zip_document_handler,
     )
 )
-# Callback
+# -----------------------------------------------------
+# 管理员 Callback
+# -----------------------------------------------------
 application.add_handler(
     CallbackQueryHandler(
         admin_callback,
-        pattern=r"^admin:"
+        pattern=r"^admin:",
     )
 )
+# -----------------------------------------------------
+# 商品 Callback
+# -----------------------------------------------------
 application.add_handler(
     CallbackQueryHandler(
         product_callback,
-        pattern=r"^product:"
+        pattern=r"^product:",
     )
 )
+# -----------------------------------------------------
+# 询价 Callback
+# -----------------------------------------------------
 application.add_handler(
     CallbackQueryHandler(
         inquiry_callback,
-        pattern=r"^inquiry:"
+        pattern=r"^inquiry:",
     )
 )
+# -----------------------------------------------------
+# 普通文字
+# -----------------------------------------------------
+application.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        message_handler,
+    )
+)
+# -----------------------------------------------------
+# 错误处理
+# -----------------------------------------------------
+application.add_error_handler(
+    error_handler
+)
 print(
-    "Bot polling started."
+    "Bot polling started..."
 )
 application.run_polling(
     allowed_updates=Update.ALL_TYPES
 )
 
-============================================================
+=========================================================
 
-启动
+程序入口
 
-============================================================
+=========================================================
 
 if name == “main”:
-
 main()
