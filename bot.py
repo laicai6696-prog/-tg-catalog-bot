@@ -18,6 +18,7 @@ from telegram.ext import (
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN", "")
+
 ADMINS = {
     int(x.strip())
     for x in os.getenv("ADMIN_IDS", "").split(",")
@@ -27,6 +28,7 @@ ADMINS = {
 DB = "bot.db"
 
 logging.basicConfig(level=logging.INFO)
+
 
 # =========================
 # 12个商品系列
@@ -46,6 +48,7 @@ CATS = {
     "c11": "中华系列",
     "c12": "白皮系列",
 }
+
 
 # =========================
 # 数据库
@@ -69,7 +72,8 @@ def init():
             price TEXT DEFAULT '询价',
             stock INTEGER DEFAULT 0,
             description TEXT DEFAULT '',
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 1,
+            image_file_id TEXT DEFAULT ''
         )
     """)
 
@@ -84,6 +88,21 @@ def init():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # 如果以前的数据库已经存在 products 表，
+    # 自动增加图片字段
+    columns = [
+        row["name"]
+        for row in c.execute(
+            "PRAGMA table_info(products)"
+        ).fetchall()
+    ]
+
+    if "image_file_id" not in columns:
+        c.execute(
+            "ALTER TABLE products "
+            "ADD COLUMN image_file_id TEXT DEFAULT ''"
+        )
 
     # 只有数据库完全没有商品时，才添加示例商品
     if c.execute(
@@ -125,11 +144,13 @@ def init():
 # =========================
 
 def home():
+
     ks = list(CATS.items())
 
     rows = []
 
     for i in range(0, 12, 2):
+
         rows.append([
             InlineKeyboardButton(
                 CATS[ks[i][0]],
@@ -141,18 +162,16 @@ def home():
             ),
         ])
 
-    rows += [
-        [
-            InlineKeyboardButton(
-                "🔎 搜索",
-                callback_data="search"
-            ),
-            InlineKeyboardButton(
-                "📩 询价",
-                callback_data="inquiry"
-            ),
-        ]
-    ]
+    rows.append([
+        InlineKeyboardButton(
+            "🔎 搜索",
+            callback_data="search"
+        ),
+        InlineKeyboardButton(
+            "📩 询价",
+            callback_data="inquiry"
+        ),
+    ])
 
     return InlineKeyboardMarkup(rows)
 
@@ -161,7 +180,10 @@ def home():
 # /start
 # =========================
 
-async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def start(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     ctx.user_data.clear()
 
@@ -177,14 +199,18 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # 用户按钮
 # =========================
 
-async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def user_button(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
 
     q = update.callback_query
+
     await q.answer()
 
-    # -------------------------
+    # =========================
     # 商品分类
-    # -------------------------
+    # =========================
 
     if q.data in CATS:
 
@@ -226,9 +252,9 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(kb),
         )
 
-    # -------------------------
+    # =========================
     # 首页
-    # -------------------------
+    # =========================
 
     elif q.data == "home":
 
@@ -238,9 +264,9 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=home(),
         )
 
-    # -------------------------
+    # =========================
     # 搜索
-    # -------------------------
+    # =========================
 
     elif q.data == "search":
 
@@ -250,9 +276,9 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "请输入商品名称或编号："
         )
 
-    # -------------------------
+    # =========================
     # 询价
-    # -------------------------
+    # =========================
 
     elif q.data == "inquiry":
 
@@ -263,9 +289,9 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "请输入商品、规格、数量或需求："
         )
 
-    # -------------------------
+    # =========================
     # 商品详情
-    # -------------------------
+    # =========================
 
     elif q.data.startswith("p:"):
 
@@ -303,18 +329,43 @@ async def user_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ],
         ]
 
-        await q.message.reply_text(
+        text = (
             f"【{r['name']}】\n"
             f"编号：{r['code']}\n"
             f"价格：{r['price']}\n"
             f"库存：{r['stock']}\n\n"
-            f"{r['description']}",
-            reply_markup=InlineKeyboardMarkup(kb),
+            f"{r['description']}"
         )
 
-    # -------------------------
+        # 有图片
+        if r["image_file_id"]:
+
+            try:
+
+                await q.message.reply_photo(
+                    photo=r["image_file_id"],
+                    caption=text,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+
+            except Exception:
+
+                await q.message.reply_text(
+                    text,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+
+        # 没有图片
+        else:
+
+            await q.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(kb),
+            )
+
+    # =========================
     # 商品询价
-    # -------------------------
+    # =========================
 
     elif q.data.startswith("iq:"):
 
@@ -355,13 +406,16 @@ async def user_text(
     ctx: ContextTypes.DEFAULT_TYPE
 ):
 
+    if not update.message or not update.message.text:
+        return
+
     text = update.message.text.strip()
 
     mode = ctx.user_data.get("mode")
 
-    # -------------------------
+    # =========================
     # 搜索
-    # -------------------------
+    # =========================
 
     if mode == "search":
 
@@ -413,9 +467,9 @@ async def user_text(
             reply_markup=InlineKeyboardMarkup(kb),
         )
 
-    # -------------------------
+    # =========================
     # 询价
-    # -------------------------
+    # =========================
 
     elif mode == "inquiry":
 
@@ -455,7 +509,6 @@ async def user_text(
         )
 
         # 通知管理员
-
         for aid in ADMINS:
 
             try:
@@ -564,9 +617,9 @@ async def admin_button(
 
     await q.answer()
 
-    # -------------------------
+    # =========================
     # 商品管理
-    # -------------------------
+    # =========================
 
     if q.data == "a:products":
 
@@ -619,9 +672,9 @@ async def admin_button(
             reply_markup=InlineKeyboardMarkup(kb),
         )
 
-    # -------------------------
+    # =========================
     # 查看某个系列
-    # -------------------------
+    # =========================
 
     elif q.data.startswith("a:cat:"):
 
@@ -634,7 +687,14 @@ async def admin_button(
 
         rows = c.execute(
             """
-            SELECT id, name, code, price, stock, active
+            SELECT
+                id,
+                name,
+                code,
+                price,
+                stock,
+                active,
+                image_file_id
             FROM products
             WHERE category = ?
             ORDER BY id
@@ -651,37 +711,227 @@ async def admin_button(
                 "暂无商品。"
             )
 
-        else:
+            kb = [[
+                InlineKeyboardButton(
+                    "⬅️ 返回系列列表",
+                    callback_data="a:products"
+                )
+            ]]
 
-            text = (
-                f"📦 {CATS[cat]}"
-                f"（{len(rows)}个）\n\n"
+            await q.message.edit_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(kb),
             )
 
-            text += "\n".join(
-                f"#{r['id']} {r['name']}\n"
-                f"　{r['code']}｜"
-                f"¥{r['price']}｜"
-                f"库存{r['stock']}｜"
-                f"{'上架' if r['active'] else '下架'}"
-                for r in rows
-            )
+            return
 
-        kb = [[
+        # 每个商品一个按钮
+        kb = []
+
+        for r in rows:
+
+            icon = "🖼️" if r["image_file_id"] else "📷"
+
+            kb.append([
+                InlineKeyboardButton(
+                    f"{icon} {r['name']}｜{r['code']}",
+                    callback_data=f"a:prod:{r['id']}"
+                )
+            ])
+
+        kb.append([
             InlineKeyboardButton(
                 "⬅️ 返回系列列表",
                 callback_data="a:products"
             )
-        ]]
+        ])
 
         await q.message.edit_text(
-            text[:4000],
+            f"📦 {CATS[cat]}\n"
+            f"共 {len(rows)} 个商品\n\n"
+            "点击商品即可添加或更换图片：",
             reply_markup=InlineKeyboardMarkup(kb),
         )
 
-    # -------------------------
+    # =========================
+    # 商品图片管理
+    # =========================
+
+    elif q.data.startswith("a:prod:"):
+
+        pid = int(q.data.split(":")[2])
+
+        c = db()
+
+        r = c.execute(
+            """
+            SELECT *
+            FROM products
+            WHERE id = ?
+            """,
+            (pid,),
+        ).fetchone()
+
+        c.close()
+
+        if not r:
+            return
+
+        has_image = bool(r["image_file_id"])
+
+        image_status = (
+            "✅ 已有商品图片"
+            if has_image
+            else "❌ 暂无商品图片"
+        )
+
+        kb = [
+            [
+                InlineKeyboardButton(
+                    "🖼️ 添加/更换图片",
+                    callback_data=f"a:setphoto:{pid}"
+                )
+            ]
+        ]
+
+        if has_image:
+
+            kb.append([
+                InlineKeyboardButton(
+                    "👁️ 查看当前图片",
+                    callback_data=f"a:viewphoto:{pid}"
+                )
+            ])
+
+            kb.append([
+                InlineKeyboardButton(
+                    "🗑️ 删除图片",
+                    callback_data=f"a:delphoto:{pid}"
+                )
+            ])
+
+        kb.append([
+            InlineKeyboardButton(
+                "⬅️ 返回商品列表",
+                callback_data=f"a:cat:{r['category']}"
+            )
+        ])
+
+        await q.message.edit_text(
+            f"📦 商品管理\n\n"
+            f"商品：{r['name']}\n"
+            f"编号：{r['code']}\n"
+            f"价格：{r['price']}\n"
+            f"库存：{r['stock']}\n\n"
+            f"{image_status}",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+
+    # =========================
+    # 添加/更换图片
+    # =========================
+
+    elif q.data.startswith("a:setphoto:"):
+
+        pid = int(q.data.split(":")[2])
+
+        c = db()
+
+        r = c.execute(
+            """
+            SELECT id, name
+            FROM products
+            WHERE id = ?
+            """,
+            (pid,),
+        ).fetchone()
+
+        c.close()
+
+        if not r:
+            return
+
+        ctx.user_data["admin_mode"] = "set_photo"
+        ctx.user_data["photo_product_id"] = pid
+
+        await q.message.reply_text(
+            f"🖼️ 商品：{r['name']}\n\n"
+            "请现在发送商品图片。\n\n"
+            "建议发送清晰的 JPG 或 PNG 图片。\n"
+            "发送一张即可。"
+        )
+
+    # =========================
+    # 查看当前图片
+    # =========================
+
+    elif q.data.startswith("a:viewphoto:"):
+
+        pid = int(q.data.split(":")[2])
+
+        c = db()
+
+        r = c.execute(
+            """
+            SELECT name, image_file_id
+            FROM products
+            WHERE id = ?
+            """,
+            (pid,),
+        ).fetchone()
+
+        c.close()
+
+        if not r or not r["image_file_id"]:
+
+            await q.message.reply_text(
+                "这个商品还没有图片。"
+            )
+
+            return
+
+        try:
+
+            await q.message.reply_photo(
+                photo=r["image_file_id"],
+                caption=f"🖼️ {r['name']}"
+            )
+
+        except Exception:
+
+            await q.message.reply_text(
+                "图片读取失败，请重新上传图片。"
+            )
+
+    # =========================
+    # 删除图片
+    # =========================
+
+    elif q.data.startswith("a:delphoto:"):
+
+        pid = int(q.data.split(":")[2])
+
+        c = db()
+
+        c.execute(
+            """
+            UPDATE products
+            SET image_file_id = ''
+            WHERE id = ?
+            """,
+            (pid,),
+        )
+
+        c.commit()
+        c.close()
+
+        await q.message.reply_text(
+            "✅ 商品图片已删除。"
+        )
+
+    # =========================
     # 返回管理后台
-    # -------------------------
+    # =========================
 
     elif q.data == "a:back":
 
@@ -744,9 +994,9 @@ async def admin_button(
             reply_markup=InlineKeyboardMarkup(kb),
         )
 
-    # -------------------------
+    # =========================
     # 询价管理
-    # -------------------------
+    # =========================
 
     elif q.data == "a:inq":
 
@@ -791,9 +1041,9 @@ async def admin_button(
             text[:4000]
         )
 
-    # -------------------------
+    # =========================
     # 添加商品
-    # -------------------------
+    # =========================
 
     elif q.data == "a:add":
 
@@ -806,9 +1056,9 @@ async def admin_button(
             "测试商品|P001|c1|350|10|商品介绍"
         )
 
-    # -------------------------
+    # =========================
     # CSV导入
-    # -------------------------
+    # =========================
 
     elif q.data == "a:import":
 
@@ -820,7 +1070,7 @@ async def admin_button(
             "id,name,code,category,price,"
             "price_type,stock,description,active\n\n"
             "导入时按 code 更新已有商品，"
-            "不会重复创建同编号商品。"
+            "不会重复创建同编号商品，也不会删除商品图片。"
         )
 
 
@@ -839,6 +1089,9 @@ async def admin_text(
     if ctx.user_data.get("admin_mode") != "add":
         return
 
+    if not update.message or not update.message.text:
+        return
+
     parts = [
         x.strip()
         for x in update.message.text.split("|")
@@ -854,9 +1107,6 @@ async def admin_text(
         return
 
     name, code, cat, price, stock, desc = parts
-
-    # 支持分类编号
-    # 也支持直接填写系列名称
 
     cat_by_name = {
         v: k
@@ -925,6 +1175,85 @@ async def admin_text(
         c.close()
 
     ctx.user_data.clear()
+
+
+# =========================
+# 管理员上传商品图片
+# =========================
+
+async def admin_photo(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE
+):
+
+    if update.effective_user.id not in ADMINS:
+        return
+
+    if ctx.user_data.get("admin_mode") != "set_photo":
+        return
+
+    pid = ctx.user_data.get("photo_product_id")
+
+    if not pid:
+        return
+
+    if not update.message.photo:
+        return
+
+    # Telegram会提供多个尺寸
+    # 最后一张通常是最大尺寸
+    photo = update.message.photo[-1]
+
+    file_id = photo.file_id
+
+    c = db()
+
+    r = c.execute(
+        """
+        SELECT name
+        FROM products
+        WHERE id = ?
+        """,
+        (pid,),
+    ).fetchone()
+
+    if not r:
+
+        c.close()
+
+        ctx.user_data.clear()
+
+        await update.message.reply_text(
+            "❌ 找不到这个商品。"
+        )
+
+        return
+
+    c.execute(
+        """
+        UPDATE products
+        SET image_file_id = ?
+        WHERE id = ?
+        """,
+        (
+            file_id,
+            pid,
+        ),
+    )
+
+    c.commit()
+    c.close()
+
+    product_name = r["name"]
+
+    ctx.user_data.clear()
+
+    await update.message.reply_text(
+        f"✅ 图片添加成功！\n\n"
+        f"商品：{product_name}\n\n"
+        "客户以后打开这个商品时，"
+        "会自动显示这张图片。"
+    )
 
 
 # =========================
@@ -1061,7 +1390,6 @@ async def admin_document(
                 else 0
             )
 
-            # 如果填写系列名称，转换成c1-c12
             cat = (
                 cat
                 if cat in CATS
@@ -1069,6 +1397,7 @@ async def admin_document(
             )
 
             if not name or not code or not cat:
+
                 raise ValueError(
                     "名称、编号或分类为空"
                 )
@@ -1083,6 +1412,10 @@ async def admin_document(
             ).fetchone()
 
             if old:
+
+                # 注意：
+                # 更新CSV时不修改 image_file_id
+                # 所以已经上传的商品图片不会丢
 
                 c.execute(
                     """
@@ -1164,7 +1497,6 @@ async def post_catalog(
     ctx: ContextTypes.DEFAULT_TYPE
 ):
 
-    # 只有管理员可以发布
     if update.effective_user.id not in ADMINS:
         return
 
@@ -1268,6 +1600,14 @@ def main():
     app.add_handler(
         CallbackQueryHandler(
             user_button
+        )
+    )
+
+    # 管理员商品图片
+    app.add_handler(
+        MessageHandler(
+            filters.PHOTO,
+            admin_photo
         )
     )
 
