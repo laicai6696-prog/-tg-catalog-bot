@@ -1075,7 +1075,10 @@ async def admin_command(update, context):
     keyboard = [
         [
             InlineKeyboardButton("\U0001f4ca \u5546\u54c1\u7edf\u8ba1", callback_data="admin:status"),
-            InlineKeyboardButton("\U0001f4e5 \u5bfc\u5165CSV", callback_data="admin:csv"),
+            InlineKeyboardButton("\U0001f4e5 \u53ea\u5bfc\u5165CSV", callback_data="admin:csv"),
+        ],
+        [
+            InlineKeyboardButton("\U0001f4e6 \u4e00\u952e\u4e0a\u4f20\u5546\u54c1+\u56fe\u7247", callback_data="admin:zip_import"),
         ],
         [
             InlineKeyboardButton("\U0001f4e6 \u5546\u54c1\u5217\u8868", callback_data="admin:list"),
@@ -1284,6 +1287,234 @@ def find_image_for_product(product, files):
     return None
 
 
+
+async def process_zip_import(update, context, document):
+    """Import one CSV plus numbered product images from a ZIP.
+
+    Expected ZIP:
+      - one CSV containing the 93 product rows
+      - images named 01..93 with common image extensions
+    Mapping:
+      01 -> P001, ..., 93 -> P093
+    """
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
+        return
+
+    if not document.file_name or not document.file_name.lower().endswith(".zip"):
+        await update.message.reply_text("\u8bf7\u4e0a\u4f20 ZIP \u6587\u4ef6\u3002")
+        return
+
+    status_message = await update.message.reply_text(
+        "\U0001f4e6 \u6b63\u5728\u4e0b\u8f7d ZIP\uff0c\u8bf7\u7a0d\u5019..."
+    )
+
+    temp_root = Path(tempfile.mkdtemp(prefix="catalog_full_zip_"))
+    zip_path = temp_root / "upload.zip"
+    extract_dir = temp_root / "extract"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        telegram_file = await context.bot.get_file(document.file_id)
+        await telegram_file.download_to_drive(custom_path=str(zip_path))
+
+        await status_message.edit_text(
+            "\u2705 ZIP \u5df2\u4e0b\u8f7d\uff0c\u6b63\u5728\u68c0\u67e5 CSV \u548c 93 \u5f20\u56fe\u7247..."
+        )
+
+        safe_extract_zip(zip_path, extract_dir)
+
+        csv_files = [
+            x for x in extract_dir.rglob("*")
+            if x.is_file() and x.suffix.lower() == ".csv"
+        ]
+        if len(csv_files) != 1:
+            await status_message.edit_text(
+                f"\u274c ZIP \u4e2d\u5fc5\u987b\u6709\u4e14\u53ea\u80fd\u6709 1 \u4e2a CSV\uff0c\u5f53\u524d\u627e\u5230 {len(csv_files)} \u4e2a\u3002"
+            )
+            return
+
+        csv_path = csv_files[0]
+        with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        if len(rows) != 93:
+            await status_message.edit_text(
+                f"\u274c CSV \u5fc5\u987b\u662f 93 \u6761\u5546\u54c1\uff0c\u5f53\u524d\u662f {len(rows)} \u6761\u3002\n"
+                "\u672c\u6b21\u5c1a\u672a\u5bfc\u5165\u3002"
+            )
+            return
+
+        parsed = []
+        seen_codes = set()
+
+        for index, row in enumerate(rows, start=1):
+            name = str(row.get("name", row.get("\u540d\u79f0", ""))).strip()
+            code = str(row.get("code", row.get("\u7f16\u53f7", ""))).strip()
+            category = normalize_category(
+                row.get("category", row.get("\u5206\u7c7b", ""))
+            )
+            price = str(row.get("price", row.get("\u4ef7\u683c", ""))).strip()
+            stock = str(row.get("stock", row.get("\u5e93\u5b58", ""))).strip()
+            description = str(
+                row.get("description", row.get("\u63cf\u8ff0", ""))
+            ).strip()
+
+            if not name or not code or category not in CATS:
+                await status_message.edit_text(
+                    f"\u274c CSV \u7b2c {index} \u884c\u6570\u636e\u4e0d\u6b63\u786e\u3002\n"
+                    "\u9700\u8981\uff1aname, code, category, price, stock\u3002"
+                )
+                return
+
+            if code in seen_codes:
+                await status_message.edit_text(
+                    f"\u274c CSV \u4e2d\u5b58\u5728\u91cd\u590d\u7f16\u53f7\uff1a{code}"
+                )
+                return
+
+            seen_codes.add(code)
+            parsed.append(
+                {
+                    "name": name,
+                    "code": code,
+                    "category": category,
+                    "price": price,
+                    "stock": stock,
+                    "description": description,
+                }
+            )
+
+        image_paths = []
+        allowed = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+        for path in extract_dir.rglob("*"):
+            if path.is_file() and path.suffix.lower() in allowed:
+                image_paths.append(path)
+
+        image_by_number = {}
+        for path in image_paths:
+            stem = path.stem.strip()
+            if re.fullmatch(r"\d{1,3}", stem):
+                number = int(stem)
+                if 1 <= number <= 93:
+                    image_by_number[number] = path
+
+        missing = [str(i).zfill(2) for i in range(1, 94) if i not in image_by_number]
+        if missing:
+            await status_message.edit_text(
+                "\u274c ZIP \u56fe\u7247\u4e0d\u5b8c\u6574\uff0c\u7f3a\u5c11\uff1a"
+                + ", ".join(missing[:30])
+                + ("\u7b49" if len(missing) > 30 else "")
+                + "\n\u5fc5\u987b\u6709 01 \u5230 93 \u5171 93 \u5f20\u56fe\u7247\u3002\n"
+                "\u672c\u6b21\u5c1a\u672a\u5bfc\u5165\u3002"
+            )
+            return
+
+        # The requested mapping is 01 -> P001 ... 93 -> P093.
+        by_code = {str(row["code"]).strip().upper(): row for row in parsed}
+        missing_codes = []
+        for i in range(1, 94):
+            code = f"P{i:03d}"
+            if code not in by_code:
+                missing_codes.append(code)
+
+        if missing_codes:
+            await status_message.edit_text(
+                "\u274c CSV \u7f16\u53f7\u5fc5\u987b\u5305\u542b P001 \u5230 P093\u3002\n"
+                "\u7f3a\u5c11\uff1a" + ", ".join(missing_codes[:30])
+            )
+            return
+
+        if product_count() > 0:
+            await status_message.edit_text(
+                f"\u26a0\ufe0f \u6570\u636e\u5e93\u5f53\u524d\u5df2\u6709 {product_count()} \u4e2a\u5546\u54c1\u3002\n"
+                "\u4e3a\u9632\u6b62\u91cd\u590d\u5bfc\u5165\uff0c\u672c\u6b21\u6ca1\u6709\u5bfc\u5165\u3002\n"
+                "\u5982\u9700\u91cd\u65b0\u5bfc\u5165\uff0c\u8bf7\u5148\u5904\u7406\u73b0\u6709\u5546\u54c1\u6570\u636e\u3002"
+            )
+            return
+
+        await status_message.edit_text(
+            "\u2705 \u68c0\u67e5\u901a\u8fc7\uff0c\u5f00\u59cb\u5bfc\u5165 93 \u4e2a\u5546\u54c1\u548c\u56fe\u7247..."
+        )
+
+        imported = 0
+        matched = 0
+        failed = []
+
+        # Import products first, then upload each numbered image to Telegram
+        # and store the returned Telegram file_id.
+        for i in range(1, 94):
+            code = f"P{i:03d}"
+            row = by_code[code]
+            product_id = insert_product(
+                name=row["name"],
+                code=row["code"],
+                category=row["category"],
+                price=row["price"],
+                stock=row["stock"],
+                description=row["description"],
+                active=1,
+            )
+            imported += 1
+
+            try:
+                with open(image_by_number[i], "rb") as photo_file:
+                    message = await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=photo_file,
+                    )
+                telegram_photo = message.photo[-1]
+
+                execute(
+                    "UPDATE products SET photo_id = "
+                    + placeholder()
+                    + " WHERE id = "
+                    + placeholder(),
+                    (telegram_photo.file_id, product_id),
+                )
+                matched += 1
+
+            except Exception:
+                traceback.print_exc()
+                failed.append(code)
+
+            if i % 10 == 0 or i == 93:
+                try:
+                    await status_message.edit_text(
+                        f"\u23f3 \u5df2\u5904\u7406 {i}/93\n"
+                        f"\u5546\u54c1\uff1a{imported}\n"
+                        f"\u56fe\u7247\uff1a{matched}"
+                    )
+                except Exception:
+                    pass
+
+        result = (
+            "\u2705 \u4e00\u952e\u4e0a\u4f20\u5b8c\u6210\n\n"
+            f"\u5546\u54c1\u5bfc\u5165\uff1a{imported}/93\n"
+            f"\u56fe\u7247\u5339\u914d\uff1a{matched}/93"
+        )
+
+        if failed:
+            result += (
+                "\n\n\u274c \u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff1a"
+                + ", ".join(failed[:30])
+            )
+
+        await status_message.edit_text(result)
+
+    except Exception as exc:
+        traceback.print_exc()
+        try:
+            await status_message.edit_text(
+                f"\u274c \u4e00\u952e\u4e0a\u4f20\u5931\u8d25\uff1a{exc}"
+            )
+        except Exception:
+            pass
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
 async def process_zip(update, context, document):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
@@ -1385,7 +1616,7 @@ async def handle_document(update, context):
     document = update.message.document
 
     if document.file_name.lower().endswith(".zip"):
-        await process_zip(update, context, document)
+        await process_zip_import(update, context, document)
         return
 
     if document.file_name.lower().endswith(".csv"):
@@ -1453,6 +1684,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "admin:status":
         if is_admin(update.effective_user.id):
             await admin_status(update, context)
+        return
+
+    if data == "admin:zip_import":
+        if is_admin(update.effective_user.id):
+            await query.message.reply_text(
+                "\U0001f4e6 \u4e00\u952e\u4e0a\u4f20\u5546\u54c1+\u56fe\u7247\n\n"
+                "\u8bf7\u53d1\u9001\u4e00\u4e2a ZIP \u6587\u4ef6\uff0c\u91cc\u9762\u5fc5\u987b\u5305\u542b\uff1a\n"
+                "1. 1 \u4e2a CSV\uff08\u5171 93 \u6761\u5546\u54c1\uff09\n"
+                "2. 93 \u5f20\u56fe\u7247\uff1a01 \u5230 93\n\n"
+                "\u56fe\u7247\u6620\u5c04\uff1a01\u2192P001\uff0c02\u2192P002\uff0c\u4e00\u76f4\u5230 93\u2192P093\u3002\n"
+                "\u56fe\u7247\u652f\u6301 JPG / JPEG / PNG / WEBP\u3002\n\n"
+                "\u53d1\u9001 ZIP \u540e\u7cfb\u7edf\u4f1a\u81ea\u52a8\u5bfc\u5165\u5546\u54c1\u5e76\u4e0a\u4f20\u56fe\u7247\u3002"
+            )
         return
 
     if data == "admin:csv":
