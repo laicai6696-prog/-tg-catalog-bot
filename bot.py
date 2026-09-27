@@ -19,7 +19,7 @@ from urllib.error import HTTPError, URLError
 
 from dotenv import load_dotenv
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -405,6 +405,8 @@ def main_menu(user_id):
     rows = [
         [InlineKeyboardButton("ð ååç®å½", callback_data="catalog")],
         [InlineKeyboardButton("ð æç´¢åå", callback_data="search")],
+        [InlineKeyboardButton("ð å¨çº¿ååç®å½", web_app=WebAppInfo(url=WEB_URL))],
+        [InlineKeyboardButton("ð¬ å®¢æç´è¾¾", url=f"https://t.me/{SERVICE_USERNAME}")],
     ]
     if is_admin(user_id):
         rows.append([InlineKeyboardButton("âï¸ ç®¡çåå°", callback_data="admin")])
@@ -918,7 +920,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clear_state(context)
             await update.message.reply_text(
                 f"â è¯¢ä»·å·²æäº¤ã\nå®¢æï¼@{SERVICE_USERNAME}",
-                reply_markup=main_menu(user_id),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("ð¬ å®¢æç´è¾¾", url=f"https://t.me/{SERVICE_USERNAME}")],
+                    [InlineKeyboardButton("ð  è¿åä¸»èå", callback_data="home")],
+                ]),
             )
         else:
             await update.message.reply_text("è¯·éæ©èååè½ã", reply_markup=main_menu(user_id))
@@ -1428,4 +1433,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
