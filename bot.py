@@ -8,10 +8,10 @@ import tempfile
 import threading
 import traceback
 import mimetypes
-import asyncio
+import shutil
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
@@ -49,25 +49,23 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 WEB_URL = os.getenv(
     "WEB_URL",
-    "https://tg-catalog-bot-10.onrender.com"
+    "https://tg-catalog-bot-10.onrender.com",
 ).strip().rstrip("/")
 
 PORT = int(os.getenv("PORT", "10000"))
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    ""
+    "",
 ).strip()
 
 CSV_FILE = BASE_DIR / os.getenv(
     "CSV_FILE",
-    "Telegram商品导入表_93个_可直接导入.csv"
+    "Telegram商品导入表_93个_可直接导入.csv",
 )
 
-# 人工客服
 SERVICE_USERNAME = "niubanggu"
 
-# 分类
 CATEGORIES = {
     "c1": "和天下系列",
     "c2": "熊猫系列",
@@ -228,7 +226,6 @@ def init_db():
                 """
             )
 
-            # 兼容旧数据库
             try:
                 cur.execute(
                     "ALTER TABLE products ADD COLUMN photo_id TEXT DEFAULT ''"
@@ -299,10 +296,12 @@ def execute(sql, params=()):
         cur = conn.cursor()
         cur.execute(sql, params)
 
+        last_id = None
+
         try:
             last_id = cur.lastrowid
         except Exception:
-            last_id = None
+            pass
 
         conn.commit()
 
@@ -313,7 +312,7 @@ def execute(sql, params=()):
 
 
 # ============================================================
-# 商品数据库操作
+# 商品数据库
 # ============================================================
 
 def insert_product(
@@ -328,7 +327,50 @@ def insert_product(
 ):
     p = placeholder()
 
-    sql = f"""
+    if USE_POSTGRES:
+        conn = db_connect()
+
+        try:
+            cur = conn.cursor()
+
+            cur.execute(
+                f"""
+                INSERT INTO products
+                (
+                    name,
+                    code,
+                    category,
+                    price,
+                    stock,
+                    description,
+                    active,
+                    photo_id
+                )
+                VALUES ({p},{p},{p},{p},{p},{p},{p},{p})
+                RETURNING id
+                """,
+                (
+                    name,
+                    code,
+                    category,
+                    price,
+                    stock,
+                    description,
+                    active,
+                    photo_id,
+                ),
+            )
+
+            row = cur.fetchone()
+            conn.commit()
+
+            return row[0] if row else None
+
+        finally:
+            conn.close()
+
+    return execute(
+        f"""
         INSERT INTO products
         (
             name,
@@ -341,10 +383,7 @@ def insert_product(
             photo_id
         )
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p})
-    """
-
-    return execute(
-        sql,
+        """,
         (
             name,
             code,
@@ -389,6 +428,8 @@ def get_products(
         params.append(category)
 
     if keyword:
+        q = f"%{keyword}%"
+
         if USE_POSTGRES:
             sql += """
                 AND (
@@ -397,10 +438,6 @@ def get_products(
                     OR description ILIKE %s
                 )
             """
-
-            q = f"%{keyword}%"
-            params.extend([q, q, q])
-
         else:
             sql += """
                 AND (
@@ -410,12 +447,14 @@ def get_products(
                 )
             """
 
-            q = f"%{keyword}%"
-            params.extend([q, q, q])
+        params.extend([q, q, q])
 
     sql += " ORDER BY id DESC"
 
-    return fetch_all(sql, tuple(params))
+    return fetch_all(
+        sql,
+        tuple(params),
+    )
 
 
 def update_product(
@@ -453,7 +492,10 @@ def update_product(
     )
 
 
-def set_product_stock(product_id, stock):
+def set_product_stock(
+    product_id,
+    stock,
+):
     p = placeholder()
 
     execute(
@@ -463,13 +505,16 @@ def set_product_stock(product_id, stock):
         WHERE id = {p}
         """,
         (
-            stock,
+            int(stock),
             product_id,
         ),
     )
 
 
-def set_product_photo(product_id, photo_id):
+def set_product_photo(
+    product_id,
+    photo_id,
+):
     p = placeholder()
 
     execute(
@@ -485,7 +530,10 @@ def set_product_photo(product_id, photo_id):
     )
 
 
-def set_product_active(product_id, active):
+def set_product_active(
+    product_id,
+    active,
+):
     p = placeholder()
 
     execute(
@@ -501,7 +549,23 @@ def set_product_active(product_id, active):
     )
 
 
-def delete_product(product_id):
+def set_all_products_active(
+    active=1,
+):
+    p = placeholder()
+
+    execute(
+        f"""
+        UPDATE products
+        SET active = {p}
+        """,
+        (int(active),),
+    )
+
+
+def delete_product(
+    product_id,
+):
     p = placeholder()
 
     execute(
@@ -511,6 +575,34 @@ def delete_product(product_id):
         """,
         (product_id,),
     )
+
+
+def get_product_counts():
+    total_row = fetch_one(
+        "SELECT COUNT(*) AS total FROM products"
+    )
+
+    active_row = fetch_one(
+        """
+        SELECT COUNT(*) AS total
+        FROM products
+        WHERE active = 1
+        """
+    )
+
+    total = (
+        int(total_row["total"])
+        if total_row
+        else 0
+    )
+
+    active = (
+        int(active_row["total"])
+        if active_row
+        else 0
+    )
+
+    return total, active
 
 
 # ============================================================
@@ -551,81 +643,24 @@ def safe_stock(value):
         return 0
 
     try:
-        return max(0, int(value))
+        return max(
+            0,
+            int(value),
+        )
     except Exception:
         return 0
 
 
 def product_text(product):
-    stock = product.get("stock", 0)
-
     return (
         f"📦 {product.get('name', '')}\n"
         f"编号：{product.get('code', '')}\n"
         f"分类：{category_name(product.get('category', ''))}\n"
         f"价格：{product.get('price', '') or '面议'}\n"
-        f"库存：{stock}\n"
+        f"库存：{product.get('stock', 0)}\n"
         f"状态：{'上架' if product.get('active') else '下架'}\n"
         f"描述：{product.get('description', '') or '无'}"
     )
-
-
-def product_keyboard(product, admin=False):
-    product_id = int(product["id"])
-
-    buttons = [
-        [
-            InlineKeyboardButton(
-                "💬 询价",
-                callback_data=f"inquiry:{product_id}",
-            )
-        ]
-    ]
-
-    if admin:
-        buttons.extend(
-            [
-                [
-                    InlineKeyboardButton(
-                        "✏️ 编辑商品",
-                        callback_data=f"edit:{product_id}",
-                    ),
-                    InlineKeyboardButton(
-                        "📦 修改库存",
-                        callback_data=f"stock:{product_id}",
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        "🖼️ 更换图片",
-                        callback_data=f"photo:{product_id}",
-                    ),
-                    InlineKeyboardButton(
-                        "👁️ 上/下架",
-                        callback_data=f"toggle:{product_id}",
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        "🗑️ 删除商品",
-                        callback_data=f"delete:{product_id}",
-                    )
-                ],
-            ]
-        )
-
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                "⬅️ 返回",
-                callback_data="admin_products"
-                if admin
-                else "catalog",
-            )
-        ]
-    )
-
-    return InlineKeyboardMarkup(buttons)
 
 
 def main_menu(user_id=None):
@@ -649,20 +684,20 @@ def main_menu(user_id=None):
         [
             InlineKeyboardButton(
                 "🌐 打开商品小程序",
-                web_app=WebAppInfo(url=WEB_URL),
+                web_app=WebAppInfo(
+                    url=WEB_URL
+                ),
             )
         ],
     ]
 
     if user_id is not None and is_admin(user_id):
-        buttons.extend(
+        buttons.append(
             [
-                [
-                    InlineKeyboardButton(
-                        "⚙️ 管理后台",
-                        callback_data="admin_menu",
-                    )
-                ]
+                InlineKeyboardButton(
+                    "⚙️ 管理后台",
+                    callback_data="admin_menu",
+                )
             ]
         )
 
@@ -670,28 +705,29 @@ def main_menu(user_id=None):
 
 
 # ============================================================
-# CSV 导入
+# CSV
 # ============================================================
 
 def import_csv_file(csv_path):
     if not csv_path.exists():
         return {
             "ok": False,
-            "message": f"CSV 文件不存在：{csv_path.name}",
+            "message": (
+                f"CSV 文件不存在：{csv_path.name}"
+            ),
         }
 
     rows = []
+    last_error = None
 
-    encodings = [
+    for encoding in (
         "utf-8-sig",
         "utf-8",
         "gb18030",
-    ]
-
-    last_error = None
-
-    for encoding in encodings:
+    ):
         try:
+            rows = []
+
             with open(
                 csv_path,
                 "r",
@@ -703,13 +739,13 @@ def import_csv_file(csv_path):
                 for row in reader:
                     rows.append(row)
 
+            last_error = None
             break
 
         except Exception as e:
             last_error = e
-            rows = []
 
-    if not rows and last_error:
+    if last_error:
         return {
             "ok": False,
             "message": f"CSV 读取失败：{last_error}",
@@ -718,7 +754,7 @@ def import_csv_file(csv_path):
     if not rows:
         return {
             "ok": False,
-            "message": "CSV 没有商品数据",
+            "message": "CSV 没有商品数据。",
         }
 
     imported = 0
@@ -771,6 +807,7 @@ def import_csv_file(csv_path):
             stock=stock,
             description=description,
             active=1,
+            photo_id="",
         )
 
         imported += 1
@@ -787,7 +824,11 @@ def product_count():
         "SELECT COUNT(*) AS total FROM products"
     )
 
-    return int(row["total"]) if row else 0
+    return (
+        int(row["total"])
+        if row
+        else 0
+    )
 
 
 def import_csv_if_empty():
@@ -795,7 +836,9 @@ def import_csv_if_empty():
         return
 
     if CSV_FILE.exists():
-        result = import_csv_file(CSV_FILE)
+        result = import_csv_file(
+            CSV_FILE
+        )
 
         print(
             "自动导入 CSV：",
@@ -804,11 +847,17 @@ def import_csv_if_empty():
 
 
 # ============================================================
-# 93 商品 ZIP 导入
+# ZIP 93 商品导入
 # ============================================================
 
-def validate_zip_path(base_dir, member_name):
-    target = (base_dir / member_name).resolve()
+def validate_zip_path(
+    base_dir,
+    member_name,
+):
+    target = (
+        base_dir /
+        member_name
+    ).resolve()
 
     try:
         common = os.path.commonpath(
@@ -820,7 +869,9 @@ def validate_zip_path(base_dir, member_name):
     except Exception:
         return False
 
-    return common == str(base_dir.resolve())
+    return common == str(
+        base_dir.resolve()
+    )
 
 
 def find_zip_csv(names):
@@ -840,9 +891,7 @@ def numbered_image_map(names):
     result = {}
 
     for name in names:
-        lower = name.lower()
-
-        if not lower.endswith(
+        if not name.lower().endswith(
             (
                 ".jpg",
                 ".jpeg",
@@ -863,7 +912,9 @@ def numbered_image_map(names):
         if not match:
             continue
 
-        number = int(match.group(1))
+        number = int(
+            match.group(1)
+        )
 
         if 1 <= number <= 93:
             result[number] = name
@@ -885,12 +936,14 @@ async def process_zip_import(
     try:
         with zipfile.ZipFile(
             zip_path,
-            "r"
+            "r",
         ) as z:
 
             names = z.namelist()
 
-            csv_name = find_zip_csv(names)
+            csv_name = find_zip_csv(
+                names
+            )
 
             if not csv_name:
                 await context.bot.send_message(
@@ -902,7 +955,9 @@ async def process_zip_import(
                 )
                 return
 
-            image_map = numbered_image_map(names)
+            image_map = numbered_image_map(
+                names
+            )
 
             missing = [
                 i
@@ -916,8 +971,7 @@ async def process_zip_import(
                     text=(
                         "❌ ZIP 导入失败\n\n"
                         "缺少图片：\n"
-                        +
-                        "、".join(
+                        + "、".join(
                             f"{i:02d}"
                             for i in missing
                         )
@@ -935,14 +989,13 @@ async def process_zip_import(
                 )
                 return
 
-            # 安全解压
             for member in names:
                 if not validate_zip_path(
                     work_dir,
                     member,
                 ):
                     raise RuntimeError(
-                        "ZIP 内存在非法路径"
+                        "ZIP 内存在非法路径。"
                     )
 
                 z.extract(
@@ -957,16 +1010,29 @@ async def process_zip_import(
 
         rows = []
 
-        with open(
-            csv_path,
-            "r",
-            encoding="utf-8-sig",
-            newline="",
-        ) as f:
-            reader = csv.DictReader(f)
+        for encoding in (
+            "utf-8-sig",
+            "utf-8",
+            "gb18030",
+        ):
+            try:
+                rows = []
 
-            for row in reader:
-                rows.append(row)
+                with open(
+                    csv_path,
+                    "r",
+                    encoding=encoding,
+                    newline="",
+                ) as f:
+                    reader = csv.DictReader(f)
+
+                    for row in reader:
+                        rows.append(row)
+
+                break
+
+            except Exception:
+                rows = []
 
         if len(rows) != 93:
             await context.bot.send_message(
@@ -1032,18 +1098,11 @@ async def process_zip_import(
                 or ""
             )
 
-            image_number = index
-
-            image_name = image_map[
-                image_number
-            ]
-
             image_path = (
                 work_dir /
-                image_name
+                image_map[index]
             )
 
-            # 先创建商品
             product_id = insert_product(
                 name=name,
                 code=code,
@@ -1055,19 +1114,27 @@ async def process_zip_import(
                 photo_id="",
             )
 
-            # 如果 PostgreSQL，lastrowid 可能为空
             if not product_id:
                 product = fetch_one(
-                    "SELECT * FROM products ORDER BY id DESC LIMIT 1"
+                    """
+                    SELECT *
+                    FROM products
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
                 )
 
                 if product:
                     product_id = product["id"]
 
-            # 将图片发送给管理员账号，
-            # Telegram 返回的 file_id 可以长期保存。
-            for admin_id in ADMIN_IDS:
+            # 给管理员发送图片获取 Telegram file_id
+            # 发送成功后马上删除
+            if ADMIN_IDS:
                 try:
+                    admin_id = next(
+                        iter(ADMIN_IDS)
+                    )
+
                     with open(
                         image_path,
                         "rb",
@@ -1079,24 +1146,22 @@ async def process_zip_import(
                             caption=(
                                 f"商品图片导入：{name}\n"
                                 f"编号：{code}\n"
-                                f"序号：{image_number:02d}"
+                                f"序号：{index:02d}"
                             ),
                         )
-
-                    photo_id = ""
 
                     if message.photo:
                         photo_id = (
                             message.photo[-1].file_id
                         )
 
-                    if photo_id and product_id:
-                        set_product_photo(
-                            product_id,
-                            photo_id,
-                        )
+                        if product_id:
+                            set_product_photo(
+                                product_id,
+                                photo_id,
+                            )
 
-                    # 自动删除管理员聊天中的图片
+                    # ★ 自动删除上传到管理员聊天的图片
                     try:
                         await context.bot.delete_message(
                             chat_id=admin_id,
@@ -1123,9 +1188,12 @@ async def process_zip_import(
             text=(
                 "🎉 ZIP 导入完成\n\n"
                 f"成功导入：{imported}/93\n"
-                "图片已经绑定到对应商品。"
+                "图片已经绑定到对应商品。\n"
+                "管理员聊天中的临时图片已自动删除。"
             ),
-            reply_markup=main_menu(chat_id),
+            reply_markup=main_menu(
+                chat_id
+            ),
         )
 
     except Exception as e:
@@ -1140,18 +1208,14 @@ async def process_zip_import(
         )
 
     finally:
-        try:
-            import shutil
-            shutil.rmtree(
-                work_dir,
-                ignore_errors=True,
-            )
-        except Exception:
-            pass
+        shutil.rmtree(
+            work_dir,
+            ignore_errors=True,
+        )
 
 
 # ============================================================
-# Telegram /start
+# /start
 # ============================================================
 
 async def start(
@@ -1162,13 +1226,11 @@ async def start(
 
     user = update.effective_user
 
-    text = (
-        "👋 欢迎使用商品目录\n\n"
-        "请选择需要的功能："
-    )
-
     await update.message.reply_text(
-        text,
+        (
+            "👋 欢迎使用商品目录\n\n"
+            "请选择需要的功能："
+        ),
         reply_markup=main_menu(
             user.id if user else None
         ),
@@ -1203,64 +1265,50 @@ async def show_catalog(
 ):
     query = update.callback_query
 
-    if query:
-        await query.answer()
+    await query.answer()
 
-        message = query.message
+    buttons = []
+    row = []
 
-        text = "🛍️ 商品目录\n\n请选择分类："
-
-        buttons = []
-
-        row = []
-
-        for code, name in CATEGORIES.items():
-            row.append(
-                InlineKeyboardButton(
-                    name,
-                    callback_data=f"cat:{code}",
-                )
+    for code, name in CATEGORIES.items():
+        row.append(
+            InlineKeyboardButton(
+                name,
+                callback_data=f"cat:{code}",
             )
+        )
 
-            if len(row) == 2:
-                buttons.append(row)
-                row = []
-
-        if row:
+        if len(row) == 2:
             buttons.append(row)
+            row = []
 
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    "📋 全部商品",
-                    callback_data="all_products",
-                )
-            ]
-        )
+    if row:
+        buttons.append(row)
 
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    "⬅️ 返回主菜单",
-                    callback_data="home",
-                )
-            ]
-        )
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "📋 全部商品",
+                callback_data="all_products",
+            )
+        ]
+    )
 
-        await message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(
-                buttons
-            ),
-        )
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "⬅️ 返回主菜单",
+                callback_data="home",
+            )
+        ]
+    )
 
-    else:
-        await update.message.reply_text(
-            "🛍️ 商品目录\n\n请选择分类：",
-            reply_markup=main_menu(
-                update.effective_user.id
-            ),
-        )
+    await query.message.edit_text(
+        "🛍️ 商品目录\n\n请选择分类：",
+        reply_markup=InlineKeyboardMarkup(
+            buttons
+        ),
+    )
 
 
 async def show_category(
@@ -1279,7 +1327,7 @@ async def show_category(
 
     buttons = []
 
-    for product in products:
+    for product in products[:100]:
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -1294,18 +1342,6 @@ async def show_category(
             ]
         )
 
-    if not products:
-        text = (
-            f"📂 {category_name(category)}\n\n"
-            "暂无商品。"
-        )
-
-    else:
-        text = (
-            f"📂 {category_name(category)}\n\n"
-            f"共 {len(products)} 个商品"
-        )
-
     buttons.append(
         [
             InlineKeyboardButton(
@@ -1316,7 +1352,14 @@ async def show_category(
     )
 
     await query.message.edit_text(
-        text,
+        (
+            f"📂 {category_name(category)}\n\n"
+            f"共 {len(products)} 个商品"
+            if products
+            else
+            f"📂 {category_name(category)}\n\n"
+            "暂无商品。"
+        ),
         reply_markup=InlineKeyboardMarkup(
             buttons
         ),
@@ -1363,7 +1406,7 @@ async def show_all_products(
 
     await query.message.edit_text(
         (
-            f"📋 全部商品\n\n"
+            "📋 全部商品\n\n"
             f"共 {len(products)} 个商品"
         ),
         reply_markup=InlineKeyboardMarkup(
@@ -1385,7 +1428,9 @@ async def show_product(
 
     await query.answer()
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         await query.message.edit_text(
@@ -1402,8 +1447,6 @@ async def show_product(
             ),
         )
         return
-
-    text = product_text(product)
 
     buttons = [
         [
@@ -1423,7 +1466,7 @@ async def show_product(
     ]
 
     await query.message.edit_text(
-        text,
+        product_text(product),
         reply_markup=InlineKeyboardMarkup(
             buttons
         ),
@@ -1531,7 +1574,9 @@ async def inquiry_from_product(
         "正在记录询价……"
     )
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         await query.message.reply_text(
@@ -1561,8 +1606,7 @@ async def inquiry_from_product(
     await query.message.reply_text(
         (
             "✅ 询价已记录\n\n"
-            "正在为你打开人工客服。\n"
-            "如没有自动打开，请点击下面按钮。"
+            "请联系人工客服继续沟通。"
         ),
         reply_markup=InlineKeyboardMarkup(
             [
@@ -1607,7 +1651,10 @@ async def inquiry_menu(
                 [
                     InlineKeyboardButton(
                         "👤 直接联系人工客服",
-                        url=f"https://t.me/{SERVICE_USERNAME}",
+                        url=(
+                            f"https://t.me/"
+                            f"{SERVICE_USERNAME}"
+                        ),
                     )
                 ],
                 [
@@ -1633,7 +1680,9 @@ async def add_product_start(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         await query.message.reply_text(
             "没有管理员权限。"
         )
@@ -1673,9 +1722,12 @@ def parse_product_text(text):
 
     name = parts[0]
     code = parts[1]
-    category = normalize_category(parts[2])
+    category = normalize_category(
+        parts[2]
+    )
     price = parts[3]
     stock_text = parts[4]
+
     description = (
         "|".join(parts[5:]).strip()
         if len(parts) >= 6
@@ -1699,14 +1751,12 @@ def parse_product_text(text):
             "库存必须是数字，例如：50"
         )
 
-    stock = int(stock_text)
-
     return {
         "name": name,
         "code": code,
         "category": category,
         "price": price,
-        "stock": stock,
+        "stock": int(stock_text),
         "description": description,
     }, None
 
@@ -1724,10 +1774,14 @@ async def admin_edit_start(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         await query.message.reply_text(
@@ -1745,24 +1799,22 @@ async def admin_edit_start(
         "admin_edit_step"
     ] = "text"
 
-    text = (
-        "✏️ 编辑商品\n\n"
-        "当前商品：\n\n"
-        f"名称：{product['name']}\n"
-        f"编号：{product['code']}\n"
-        f"分类：{category_name(product['category'])}\n"
-        f"价格：{product['price'] or '面议'}\n"
-        f"库存：{product['stock']}\n"
-        f"描述：{product['description'] or '无'}\n\n"
-        "请重新发送完整商品资料：\n\n"
-        "名称|编号|分类|价格|库存|描述\n\n"
-        "例如：\n"
-        "新商品|P001|c1|100|50|商品说明\n\n"
-        "发送 /cancel 取消。"
-    )
-
     await query.message.reply_text(
-        text
+        (
+            "✏️ 编辑商品\n\n"
+            "当前商品：\n\n"
+            f"名称：{product['name']}\n"
+            f"编号：{product['code']}\n"
+            f"分类：{category_name(product['category'])}\n"
+            f"价格：{product['price'] or '面议'}\n"
+            f"库存：{product['stock']}\n"
+            f"描述：{product['description'] or '无'}\n\n"
+            "请重新发送完整商品资料：\n\n"
+            "名称|编号|分类|价格|库存|描述\n\n"
+            "例如：\n"
+            "新商品|P001|c1|100|50|商品说明\n\n"
+            "发送 /cancel 取消。"
+        )
     )
 
 
@@ -1775,10 +1827,14 @@ async def admin_replace_photo_start(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         await query.message.reply_text(
@@ -1816,10 +1872,14 @@ async def admin_stock_start(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         await query.message.reply_text(
@@ -1851,7 +1911,7 @@ async def admin_stock_start(
 
 
 # ============================================================
-# 商品编辑处理
+# 管理员文字处理
 # ============================================================
 
 async def handle_admin_text(
@@ -1867,9 +1927,7 @@ async def handle_admin_text(
         "admin_edit_step"
     )
 
-    # ----------------------------
     # 修改库存
-    # ----------------------------
     if step == "stock":
         product_id = context.user_data.get(
             "admin_stock_product_id"
@@ -1879,16 +1937,15 @@ async def handle_admin_text(
             context.user_data.clear()
             return True
 
-        product = get_product(product_id)
+        product = get_product(
+            product_id
+        )
 
         if not product:
             context.user_data.clear()
 
             await update.message.reply_text(
-                "商品不存在。",
-                reply_markup=main_menu(
-                    user.id
-                ),
+                "商品不存在。"
             )
 
             return True
@@ -1922,7 +1979,7 @@ async def handle_admin_text(
                 [
                     [
                         InlineKeyboardButton(
-                            "⚙️ 继续管理商品",
+                            "⚙️ 商品管理",
                             callback_data="admin_products",
                         )
                     ],
@@ -1938,9 +1995,7 @@ async def handle_admin_text(
 
         return True
 
-    # ----------------------------
     # 编辑商品资料
-    # ----------------------------
     if step == "text":
         product_id = context.user_data.get(
             "admin_edit_product_id"
@@ -1960,6 +2015,10 @@ async def handle_admin_text(
             )
             return True
 
+        old_product = get_product(
+            product_id
+        )
+
         update_product(
             product_id=product_id,
             name=data["name"],
@@ -1970,7 +2029,9 @@ async def handle_admin_text(
             description=data["description"],
         )
 
-        product = get_product(product_id)
+        product = get_product(
+            product_id
+        )
 
         context.user_data.clear()
 
@@ -1978,18 +2039,22 @@ async def handle_admin_text(
             (
                 "✅ 商品资料修改成功\n\n"
                 + product_text(product)
+                + "\n\n"
+                "原商品图片已保留。"
             ),
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(
                             "🖼️ 更换图片",
-                            callback_data=f"photo:{product_id}",
+                            callback_data=(
+                                f"photo:{product_id}"
+                            ),
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            "⚙️ 继续管理商品",
+                            "⚙️ 商品管理",
                             callback_data="admin_products",
                         )
                     ],
@@ -2028,9 +2093,10 @@ async def handle_photo(
         "admin_edit_step"
     )
 
-    # ----------------------------
+    # --------------------------------------------------------
     # 添加商品图片
-    # ----------------------------
+    # --------------------------------------------------------
+
     if context.user_data.get(
         "admin_add_step"
     ) == "photo":
@@ -2041,6 +2107,12 @@ async def handle_photo(
 
         if not product_id:
             context.user_data.clear()
+
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
+
             return
 
         photo = update.message.photo[-1]
@@ -2050,13 +2122,15 @@ async def handle_photo(
             photo.file_id,
         )
 
-        # 自动删除管理员发送的图片
+        # ★ 自动删除管理员刚发送的图片
         try:
             await update.message.delete()
         except Exception:
             pass
 
-        product = get_product(product_id)
+        product = get_product(
+            product_id
+        )
 
         context.user_data.clear()
 
@@ -2064,6 +2138,8 @@ async def handle_photo(
             (
                 "✅ 商品添加完成\n\n"
                 + product_text(product)
+                + "\n\n"
+                "商品图片已保存，上传的聊天图片已自动删除。"
             ),
             reply_markup=InlineKeyboardMarkup(
                 [
@@ -2085,9 +2161,10 @@ async def handle_photo(
 
         return
 
-    # ----------------------------
+    # --------------------------------------------------------
     # 更换商品图片
-    # ----------------------------
+    # --------------------------------------------------------
+
     if step == "photo":
         product_id = context.user_data.get(
             "admin_photo_product_id"
@@ -2095,9 +2172,17 @@ async def handle_photo(
 
         if not product_id:
             context.user_data.clear()
+
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
+
             return
 
-        product = get_product(product_id)
+        product = get_product(
+            product_id
+        )
 
         if not product:
             context.user_data.clear()
@@ -2120,7 +2205,7 @@ async def handle_photo(
             photo.file_id,
         )
 
-        # 自动删除管理员刚发的图片
+        # ★ 自动删除管理员刚发送的图片
         try:
             await update.message.delete()
         except Exception:
@@ -2132,7 +2217,8 @@ async def handle_photo(
             (
                 "✅ 商品图片更换成功\n\n"
                 f"商品：{product['name']}\n"
-                f"编号：{product['code']}"
+                f"编号：{product['code']}\n\n"
+                "上传的聊天图片已自动删除。"
             ),
             reply_markup=InlineKeyboardMarkup(
                 [
@@ -2156,7 +2242,7 @@ async def handle_photo(
 
 
 # ============================================================
-# 添加商品文本
+# 添加商品文字
 # ============================================================
 
 async def handle_add_product_text(
@@ -2194,17 +2280,6 @@ async def handle_add_product_text(
         photo_id="",
     )
 
-    if not product_id:
-        product = fetch_one(
-            "SELECT * FROM products ORDER BY id DESC LIMIT 1"
-        )
-
-        product_id = (
-            product["id"]
-            if product
-            else None
-        )
-
     context.user_data[
         "admin_new_product_id"
     ] = product_id
@@ -2226,7 +2301,7 @@ async def handle_add_product_text(
 
 
 # ============================================================
-# 跳过商品图片
+# 跳过图片
 # ============================================================
 
 async def handle_skip_photo(
@@ -2240,42 +2315,51 @@ async def handle_skip_photo(
 
     if context.user_data.get(
         "admin_add_step"
-    ) == "photo":
+    ) != "photo":
+        return False
 
-        product_id = context.user_data.get(
-            "admin_new_product_id"
-        )
+    product_id = context.user_data.get(
+        "admin_new_product_id"
+    )
 
-        product = get_product(product_id)
+    product = (
+        get_product(product_id)
+        if product_id
+        else None
+    )
 
-        context.user_data.clear()
+    context.user_data.clear()
 
+    if not product:
         await update.message.reply_text(
-            (
-                "✅ 商品添加完成\n\n"
-                + product_text(product)
-            ),
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "⚙️ 商品管理",
-                            callback_data="admin_products",
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            "⬅️ 管理后台",
-                            callback_data="admin_menu",
-                        )
-                    ],
-                ]
-            ),
+            "商品不存在。"
         )
-
         return True
 
-    return False
+    await update.message.reply_text(
+        (
+            "✅ 商品添加完成\n\n"
+            + product_text(product)
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "⚙️ 商品管理",
+                        callback_data="admin_products",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⬅️ 管理后台",
+                        callback_data="admin_menu",
+                    )
+                ],
+            ]
+        ),
+    )
+
+    return True
 
 
 # ============================================================
@@ -2292,13 +2376,6 @@ async def handle_text(
     text = normalize_text(
         update.message.text
     )
-
-    if text == "/cancel":
-        await cancel(
-            update,
-            context,
-        )
-        return
 
     if text == "跳过":
         if await handle_skip_photo(
@@ -2319,7 +2396,6 @@ async def handle_text(
     ):
         return
 
-    # 普通文本
     await update.message.reply_text(
         "请选择功能：",
         reply_markup=main_menu(
@@ -2355,13 +2431,7 @@ async def send_admin_menu(
     context,
     message_id=None,
 ):
-    total_row = fetch_one(
-        "SELECT COUNT(*) AS total FROM products"
-    )
-
-    active_row = fetch_one(
-        "SELECT COUNT(*) AS total FROM products WHERE active = 1"
-    )
+    total, active = get_product_counts()
 
     pending_row = fetch_one(
         """
@@ -2369,18 +2439,6 @@ async def send_admin_menu(
         FROM inquiries
         WHERE status = '待处理'
         """
-    )
-
-    total = (
-        int(total_row["total"])
-        if total_row
-        else 0
-    )
-
-    active = (
-        int(active_row["total"])
-        if active_row
-        else 0
     )
 
     pending = (
@@ -2393,6 +2451,7 @@ async def send_admin_menu(
         "⚙️ 管理后台\n\n"
         f"商品：{total}\n"
         f"上架：{active}\n"
+        f"下架：{total - active}\n"
         f"待处理询价：{pending}\n\n"
         "请选择管理功能："
     )
@@ -2404,6 +2463,16 @@ async def send_admin_menu(
                     "📦 商品管理",
                     callback_data="admin_products",
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🚀 一键上架全部",
+                    callback_data="admin_publish_all",
+                ),
+                InlineKeyboardButton(
+                    "⬇️ 一键下架全部",
+                    callback_data="admin_unpublish_all",
+                ),
             ],
             [
                 InlineKeyboardButton(
@@ -2473,7 +2542,9 @@ async def admin_list(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     products = get_products()
@@ -2501,6 +2572,19 @@ async def admin_list(
                 )
             ]
         )
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "🚀 一键上架全部",
+                callback_data="admin_publish_all",
+            ),
+            InlineKeyboardButton(
+                "⬇️ 一键下架全部",
+                callback_data="admin_unpublish_all",
+            ),
+        ]
+    )
 
     buttons.append(
         [
@@ -2541,10 +2625,14 @@ async def admin_product_detail(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         await query.message.edit_text(
@@ -2562,27 +2650,28 @@ async def admin_product_detail(
         )
         return
 
-    text = (
-        "⚙️ 商品管理\n\n"
-        + product_text(product)
-    )
-
     keyboard = InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
                     "✏️ 编辑商品",
-                    callback_data=f"edit:{product_id}",
+                    callback_data=(
+                        f"edit:{product_id}"
+                    ),
                 ),
                 InlineKeyboardButton(
                     "📦 修改库存",
-                    callback_data=f"stock:{product_id}",
+                    callback_data=(
+                        f"stock:{product_id}"
+                    ),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     "🖼️ 更换图片",
-                    callback_data=f"photo:{product_id}",
+                    callback_data=(
+                        f"photo:{product_id}"
+                    ),
                 )
             ],
             [
@@ -2592,11 +2681,15 @@ async def admin_product_detail(
                         if product["active"]
                         else "🟢 上架商品"
                     ),
-                    callback_data=f"toggle:{product_id}",
+                    callback_data=(
+                        f"toggle:{product_id}"
+                    ),
                 ),
                 InlineKeyboardButton(
                     "🗑️ 删除商品",
-                    callback_data=f"delete:{product_id}",
+                    callback_data=(
+                        f"delete:{product_id}"
+                    ),
                 ),
             ],
             [
@@ -2609,13 +2702,19 @@ async def admin_product_detail(
     )
 
     await query.message.edit_text(
-        text,
+        (
+            "⚙️ 商品管理\n\n"
+            + product_text(product)
+            + "\n\n"
+            f"图片："
+            f"{'已设置' if product.get('photo_id') else '未设置'}"
+        ),
         reply_markup=keyboard,
     )
 
 
 # ============================================================
-# 上架 / 下架
+# 单个商品上下架
 # ============================================================
 
 async def admin_toggle_product(
@@ -2627,10 +2726,14 @@ async def admin_toggle_product(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         return
@@ -2646,12 +2749,221 @@ async def admin_toggle_product(
         new_active,
     )
 
-    product = get_product(product_id)
-
     await admin_product_detail(
         update,
         context,
         product_id,
+    )
+
+
+# ============================================================
+# 一键上架全部
+# ============================================================
+
+async def admin_publish_all(
+    update,
+    context,
+):
+    query = update.callback_query
+
+    await query.answer()
+
+    if not is_admin(
+        query.from_user.id
+    ):
+        return
+
+    total, active = get_product_counts()
+
+    if total == 0:
+        await query.message.edit_text(
+            "📦 当前没有商品。",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "⬅️ 管理后台",
+                            callback_data="admin_menu",
+                        )
+                    ]
+                ]
+            ),
+        )
+        return
+
+    await query.message.edit_text(
+        (
+            "🚀 一键上架全部商品\n\n"
+            f"商品总数：{total}\n"
+            f"当前已上架：{active}\n"
+            f"将上架：{total - active} 个\n\n"
+            "确定要全部上架吗？"
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ 确定全部上架",
+                        callback_data="publish_all_yes",
+                    ),
+                    InlineKeyboardButton(
+                        "❌ 取消",
+                        callback_data="admin_menu",
+                    ),
+                ]
+            ]
+        ),
+    )
+
+
+async def admin_publish_all_confirm(
+    update,
+    context,
+):
+    query = update.callback_query
+
+    await query.answer(
+        "正在上架全部商品……"
+    )
+
+    if not is_admin(
+        query.from_user.id
+    ):
+        return
+
+    total, _ = get_product_counts()
+
+    set_all_products_active(1)
+
+    _, active = get_product_counts()
+
+    await query.message.edit_text(
+        (
+            "🎉 全部商品已上架\n\n"
+            f"商品总数：{total}\n"
+            f"当前上架：{active}\n\n"
+            "所有商品现在都可以在商品目录和 Web 小程序中显示。"
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📦 商品管理",
+                        callback_data="admin_products",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⚙️ 管理后台",
+                        callback_data="admin_menu",
+                    )
+                ],
+            ]
+        ),
+    )
+
+
+# ============================================================
+# 一键下架全部
+# ============================================================
+
+async def admin_unpublish_all(
+    update,
+    context,
+):
+    query = update.callback_query
+
+    await query.answer()
+
+    if not is_admin(
+        query.from_user.id
+    ):
+        return
+
+    total, active = get_product_counts()
+
+    if total == 0:
+        await query.message.edit_text(
+            "📦 当前没有商品。",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "⬅️ 管理后台",
+                            callback_data="admin_menu",
+                        )
+                    ]
+                ]
+            ),
+        )
+        return
+
+    await query.message.edit_text(
+        (
+            "⚠️ 一键下架全部商品\n\n"
+            f"商品总数：{total}\n"
+            f"当前上架：{active}\n\n"
+            "确定要全部下架吗？"
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "⬇️ 确定全部下架",
+                        callback_data="unpublish_all_yes",
+                    ),
+                    InlineKeyboardButton(
+                        "❌ 取消",
+                        callback_data="admin_menu",
+                    ),
+                ]
+            ]
+        ),
+    )
+
+
+async def admin_unpublish_all_confirm(
+    update,
+    context,
+):
+    query = update.callback_query
+
+    await query.answer(
+        "正在下架全部商品……"
+    )
+
+    if not is_admin(
+        query.from_user.id
+    ):
+        return
+
+    total, _ = get_product_counts()
+
+    set_all_products_active(0)
+
+    await query.message.edit_text(
+        (
+            "✅ 全部商品已下架\n\n"
+            f"商品总数：{total}\n"
+            "当前上架：0\n\n"
+            "Web 商品小程序中的商品也会立即隐藏。"
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📦 商品管理",
+                        callback_data="admin_products",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⚙️ 管理后台",
+                        callback_data="admin_menu",
+                    )
+                ],
+            ]
+        ),
     )
 
 
@@ -2668,10 +2980,14 @@ async def admin_delete_confirm(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         return
@@ -2713,15 +3029,21 @@ async def admin_delete_product(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
-    product = get_product(product_id)
+    product = get_product(
+        product_id
+    )
 
     if not product:
         return
 
-    delete_product(product_id)
+    delete_product(
+        product_id
+    )
 
     await query.message.edit_text(
         (
@@ -2759,7 +3081,9 @@ async def admin_status(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     total = product_count()
@@ -2799,19 +3123,19 @@ async def admin_status(
         else "SQLite"
     )
 
-    text = (
-        "📊 系统状态\n\n"
-        f"数据库：{db_type}\n"
-        f"商品总数：{total}\n"
-        f"上架商品：{active}\n"
-        f"已有图片：{photos}\n"
-        f"CSV：{CSV_FILE.name}\n"
-        f"CSV存在：{'是' if CSV_FILE.exists() else '否'}\n"
-        f"网页：{WEB_URL}"
-    )
-
     await query.message.edit_text(
-        text,
+        (
+            "📊 系统状态\n\n"
+            f"数据库：{db_type}\n"
+            f"商品总数：{total}\n"
+            f"上架商品：{active}\n"
+            f"下架商品：{total - active}\n"
+            f"已有图片：{photos}\n"
+            f"CSV：{CSV_FILE.name}\n"
+            f"CSV存在："
+            f"{'是' if CSV_FILE.exists() else '否'}\n"
+            f"网页：{WEB_URL}"
+        ),
         reply_markup=InlineKeyboardMarkup(
             [
                 [
@@ -2832,7 +3156,7 @@ async def admin_status(
 
 
 # ============================================================
-# CSV 导入
+# CSV 后台导入
 # ============================================================
 
 async def admin_csv(
@@ -2843,7 +3167,9 @@ async def admin_csv(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     if not CSV_FILE.exists():
@@ -2851,8 +3177,7 @@ async def admin_csv(
             (
                 "❌ 找不到 CSV 文件。\n\n"
                 f"文件名：{CSV_FILE.name}\n\n"
-                "请把 CSV 放到 bot.py 同级目录，"
-                "或者使用下面的上传方式。"
+                "你也可以直接在这里发送 CSV 文件，机器人会自动导入。"
             ),
             reply_markup=InlineKeyboardMarkup(
                 [
@@ -2905,7 +3230,7 @@ async def admin_csv(
 
 
 # ============================================================
-# ZIP 导入入口
+# ZIP 后台入口
 # ============================================================
 
 async def admin_zip(
@@ -2916,7 +3241,9 @@ async def admin_zip(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     context.user_data.clear()
@@ -2944,6 +3271,10 @@ async def admin_zip(
     )
 
 
+# ============================================================
+# 文件处理
+# ============================================================
+
 async def handle_document(
     update,
     context,
@@ -2958,9 +3289,15 @@ async def handle_document(
     if not document:
         return
 
-    filename = document.file_name or ""
+    filename = (
+        document.file_name
+        or ""
+    )
 
+    # --------------------------------------------------------
     # ZIP
+    # --------------------------------------------------------
+
     if context.user_data.get(
         "admin_zip_upload"
     ):
@@ -2983,6 +3320,7 @@ async def handle_document(
             custom_path=str(target)
         )
 
+        # ★ 自动删除管理员聊天中的 ZIP
         try:
             await update.message.delete()
         except Exception:
@@ -3003,7 +3341,10 @@ async def handle_document(
 
         return
 
-    # CSV 上传
+    # --------------------------------------------------------
+    # CSV
+    # --------------------------------------------------------
+
     if filename.lower().endswith(
         ".csv"
     ):
@@ -3018,6 +3359,7 @@ async def handle_document(
             custom_path=str(target)
         )
 
+        # ★ 自动删除管理员聊天中的 CSV
         try:
             await update.message.delete()
         except Exception:
@@ -3036,8 +3378,10 @@ async def handle_document(
             await update.effective_chat.send_message(
                 (
                     "✅ CSV 导入完成\n\n"
-                    f"CSV 商品：{result.get('total', 0)}\n"
-                    f"成功导入：{result.get('imported', 0)}"
+                    f"CSV 商品："
+                    f"{result.get('total', 0)}\n"
+                    f"成功导入："
+                    f"{result.get('imported', 0)}"
                 ),
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -3073,7 +3417,7 @@ async def handle_document(
 
 
 # ============================================================
-# 询价记录后台
+# 询价记录
 # ============================================================
 
 async def admin_inquiries(
@@ -3084,7 +3428,9 @@ async def admin_inquiries(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     rows = fetch_all(
@@ -3153,7 +3499,9 @@ async def admin_inquiry_detail(
 
     await query.answer()
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     p = placeholder()
@@ -3172,22 +3520,21 @@ async def admin_inquiry_detail(
 
     username = row.get(
         "username",
-        ""
-    )
-
-    text = (
-        "📩 询价详情\n\n"
-        f"编号：#{row['id']}\n"
-        f"客户：@{username if username else '无'}\n"
-        f"用户ID：{row.get('user_id', '')}\n"
-        f"商品：{row.get('product', '')}\n"
-        f"状态：{row.get('status', '')}\n"
-        f"时间：{row.get('created_at', '')}\n\n"
-        f"{row.get('message', '')}"
+        "",
     )
 
     await query.message.edit_text(
-        text,
+        (
+            "📩 询价详情\n\n"
+            f"编号：#{row['id']}\n"
+            f"客户：@"
+            f"{username if username else '无'}\n"
+            f"用户ID：{row.get('user_id', '')}\n"
+            f"商品：{row.get('product', '')}\n"
+            f"状态：{row.get('status', '')}\n"
+            f"时间：{row.get('created_at', '')}\n\n"
+            f"{row.get('message', '')}"
+        ),
         reply_markup=InlineKeyboardMarkup(
             [
                 [
@@ -3220,7 +3567,9 @@ async def admin_mark_inquiry(
         "已标记"
     )
 
-    if not is_admin(query.from_user.id):
+    if not is_admin(
+        query.from_user.id
+    ):
         return
 
     p = placeholder()
@@ -3257,9 +3606,8 @@ async def button_handler(
     data = query.data or ""
 
     try:
-        # ----------------------------
+
         # 首页
-        # ----------------------------
         if data == "home":
             await query.answer()
 
@@ -3277,9 +3625,7 @@ async def button_handler(
 
             return
 
-        # ----------------------------
         # 商品目录
-        # ----------------------------
         if data == "catalog":
             await show_catalog(
                 update,
@@ -3290,7 +3636,7 @@ async def button_handler(
         if data.startswith("cat:"):
             category = data.split(
                 ":",
-                1
+                1,
             )[1]
 
             await show_category(
@@ -3312,7 +3658,7 @@ async def button_handler(
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3324,9 +3670,7 @@ async def button_handler(
 
             return
 
-        # ----------------------------
         # 询价
-        # ----------------------------
         if data == "inquiry_menu":
             await inquiry_menu(
                 update,
@@ -3338,7 +3682,7 @@ async def button_handler(
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3350,9 +3694,7 @@ async def button_handler(
 
             return
 
-        # ----------------------------
         # 管理后台
-        # ----------------------------
         if data == "admin_menu":
             await query.answer()
 
@@ -3376,11 +3718,13 @@ async def button_handler(
             )
             return
 
-        if data.startswith("admin_product:"):
+        if data.startswith(
+            "admin_product:"
+        ):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3392,9 +3736,7 @@ async def button_handler(
 
             return
 
-        # ----------------------------
         # 添加商品
-        # ----------------------------
         if data == "admin_add":
             await add_product_start(
                 update,
@@ -3402,14 +3744,12 @@ async def button_handler(
             )
             return
 
-        # ----------------------------
-        # 编辑商品
-        # ----------------------------
+        # 编辑
         if data.startswith("edit:"):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3421,14 +3761,12 @@ async def button_handler(
 
             return
 
-        # ----------------------------
-        # 修改库存
-        # ----------------------------
+        # 库存
         if data.startswith("stock:"):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3440,14 +3778,12 @@ async def button_handler(
 
             return
 
-        # ----------------------------
-        # 更换图片
-        # ----------------------------
+        # 图片
         if data.startswith("photo:"):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3459,14 +3795,12 @@ async def button_handler(
 
             return
 
-        # ----------------------------
-        # 上下架
-        # ----------------------------
+        # 单个上下架
         if data.startswith("toggle:"):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3478,14 +3812,42 @@ async def button_handler(
 
             return
 
-        # ----------------------------
-        # 删除确认
-        # ----------------------------
+        # 一键上架
+        if data == "admin_publish_all":
+            await admin_publish_all(
+                update,
+                context,
+            )
+            return
+
+        if data == "publish_all_yes":
+            await admin_publish_all_confirm(
+                update,
+                context,
+            )
+            return
+
+        # 一键下架
+        if data == "admin_unpublish_all":
+            await admin_unpublish_all(
+                update,
+                context,
+            )
+            return
+
+        if data == "unpublish_all_yes":
+            await admin_unpublish_all_confirm(
+                update,
+                context,
+            )
+            return
+
+        # 删除
         if data.startswith("delete:"):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3497,11 +3859,13 @@ async def button_handler(
 
             return
 
-        if data.startswith("delete_yes:"):
+        if data.startswith(
+            "delete_yes:"
+        ):
             product_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3513,9 +3877,7 @@ async def button_handler(
 
             return
 
-        # ----------------------------
         # CSV
-        # ----------------------------
         if data == "admin_csv":
             await admin_csv(
                 update,
@@ -3523,9 +3885,7 @@ async def button_handler(
             )
             return
 
-        # ----------------------------
         # ZIP
-        # ----------------------------
         if data == "admin_zip":
             await admin_zip(
                 update,
@@ -3533,9 +3893,7 @@ async def button_handler(
             )
             return
 
-        # ----------------------------
-        # 系统状态
-        # ----------------------------
+        # 状态
         if data == "admin_status":
             await admin_status(
                 update,
@@ -3543,9 +3901,7 @@ async def button_handler(
             )
             return
 
-        # ----------------------------
         # 询价记录
-        # ----------------------------
         if data == "admin_inquiries":
             await admin_inquiries(
                 update,
@@ -3559,7 +3915,7 @@ async def button_handler(
             inquiry_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3577,7 +3933,7 @@ async def button_handler(
             inquiry_id = int(
                 data.split(
                     ":",
-                    1
+                    1,
                 )[1]
             )
 
@@ -3589,17 +3945,15 @@ async def button_handler(
 
             return
 
-        # ----------------------------
         # 搜索
-        # ----------------------------
         if data == "search":
             await query.answer()
 
             await query.message.reply_text(
                 (
                     "🔎 搜索商品\n\n"
-                    "目前网页商品目录支持直接搜索。\n"
-                    "点击下面按钮打开商品小程序："
+                    "请打开商品小程序，"
+                    "可以直接搜索商品名称或编号。"
                 ),
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -3625,7 +3979,7 @@ async def button_handler(
 
         await query.answer()
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
 
         try:
@@ -3638,13 +3992,18 @@ async def button_handler(
 
 
 # ============================================================
-# Web API
+# Web JSON
 # ============================================================
 
-def json_response(handler, data, status=200):
+def json_response(
+    handler,
+    data,
+    status=200,
+):
     raw = json.dumps(
         data,
         ensure_ascii=False,
+        default=str,
     ).encode("utf-8")
 
     handler.send_response(status)
@@ -3673,7 +4032,7 @@ def read_json(handler):
     length = int(
         handler.headers.get(
             "Content-Length",
-            "0"
+            "0",
         )
     )
 
@@ -3689,6 +4048,10 @@ def read_json(handler):
     )
 
 
+# ============================================================
+# Web Handler
+# ============================================================
+
 class WebHandler(
     BaseHTTPRequestHandler
 ):
@@ -3699,6 +4062,10 @@ class WebHandler(
         *args,
     ):
         return
+
+    # --------------------------------------------------------
+    # GET
+    # --------------------------------------------------------
 
     def do_GET(self):
         try:
@@ -3794,6 +4161,9 @@ class WebHandler(
                         "csv_file": CSV_FILE.name,
                         "csv_exists": CSV_FILE.exists(),
                         "web_url": WEB_URL,
+                        "service_username": (
+                            SERVICE_USERNAME
+                        ),
                     },
                 )
 
@@ -3820,26 +4190,20 @@ class WebHandler(
 
             # 商品
             if path == "/api/products":
-                active_value = (
-                    query.get(
-                        "active",
-                        ["1"],
-                    )[0]
-                )
+                active_value = query.get(
+                    "active",
+                    ["1"],
+                )[0]
 
-                category = (
-                    query.get(
-                        "category",
-                        [""],
-                    )[0]
-                )
+                category = query.get(
+                    "category",
+                    [""],
+                )[0]
 
-                keyword = (
-                    query.get(
-                        "keyword",
-                        [""],
-                    )[0]
-                )
+                keyword = query.get(
+                    "keyword",
+                    [""],
+                )[0]
 
                 products = get_products(
                     active_only=(
@@ -3873,11 +4237,11 @@ class WebHandler(
 
                 return
 
-            # Telegram 商品图片
+            # 商品图片
             if path == "/api/photo":
                 ids = query.get(
                     "id",
-                    []
+                    [],
                 )
 
                 if not ids:
@@ -3911,14 +4275,14 @@ class WebHandler(
                     )
                     return
 
-                url = (
+                api_url = (
                     "https://api.telegram.org/"
                     f"bot{BOT_TOKEN}/getFile"
-                    f"?file_id={photo_id}"
+                    f"?file_id={quote(str(photo_id))}"
                 )
 
                 req = Request(
-                    url,
+                    api_url,
                     headers={
                         "User-Agent":
                             "Mozilla/5.0"
@@ -3929,6 +4293,7 @@ class WebHandler(
                     req,
                     timeout=20,
                 ) as response:
+
                     data = json.loads(
                         response.read()
                     )
@@ -3941,8 +4306,9 @@ class WebHandler(
                     return
 
                 file_path = (
-                    data["result"]
-                    .get("file_path")
+                    data["result"].get(
+                        "file_path"
+                    )
                 )
 
                 if not file_path:
@@ -3970,7 +4336,10 @@ class WebHandler(
                     req2,
                     timeout=30,
                 ) as response:
-                    image_data = response.read()
+
+                    image_data = (
+                        response.read()
+                    )
 
                     content_type = (
                         response.headers.get(
@@ -4021,12 +4390,14 @@ class WebHandler(
                     relative
                 ).resolve()
 
+                web_root = (
+                    WEB_DIR.resolve()
+                )
+
                 if not str(
                     file_path
                 ).startswith(
-                    str(
-                        WEB_DIR.resolve()
-                    )
+                    str(web_root)
                 ):
                     self.send_error(
                         403
@@ -4082,6 +4453,10 @@ class WebHandler(
             except Exception:
                 pass
 
+    # --------------------------------------------------------
+    # POST
+    # --------------------------------------------------------
+
     def do_POST(self):
         try:
             parsed = urlparse(
@@ -4106,21 +4481,21 @@ class WebHandler(
             username = normalize_text(
                 data.get(
                     "username",
-                    ""
+                    "",
                 )
             )
 
             product = normalize_text(
                 data.get(
                     "product",
-                    ""
+                    "",
                 )
             )
 
             message = normalize_text(
                 data.get(
                     "message",
-                    ""
+                    "",
                 )
             )
 
@@ -4147,8 +4522,6 @@ class WebHandler(
                 ),
             )
 
-            # Web 请求无法直接使用 Telegram Application，
-            # 所以异步通知由后台线程处理。
             threading.Thread(
                 target=notify_admins_sync,
                 args=(
@@ -4165,6 +4538,10 @@ class WebHandler(
                 {
                     "ok": True,
                     "message": "询价已记录",
+                    "service": (
+                        f"https://t.me/"
+                        f"{SERVICE_USERNAME}"
+                    ),
                 },
             )
 
@@ -4182,7 +4559,7 @@ class WebHandler(
 
 
 # ============================================================
-# Web 询价通知管理员
+# Web 询价通知
 # ============================================================
 
 def notify_admins_sync(
@@ -4191,13 +4568,6 @@ def notify_admins_sync(
     product,
     message,
 ):
-    """
-    Web Mini App 询价通知。
-
-    这里使用 Telegram Bot API，
-    不依赖 Application 的 asyncio loop。
-    """
-
     text = (
         "🔔 Web商品目录新询价\n\n"
         f"客户用户名："
@@ -4242,7 +4612,7 @@ def notify_admins_sync(
 
 
 # ============================================================
-# 启动 Web 服务
+# Web 服务
 # ============================================================
 
 def start_web_server():
@@ -4281,7 +4651,22 @@ async def error_handler(
 # 主程序
 # ============================================================
 
+async def post_init(app):
+    try:
+        await app.bot.delete_webhook(
+            drop_pending_updates=True
+        )
+
+        print(
+            "旧 Webhook 已清理"
+        )
+
+    except Exception:
+        traceback.print_exc()
+
+
 def main():
+
     if not BOT_TOKEN:
         raise RuntimeError(
             "缺少 BOT_TOKEN 环境变量。"
@@ -4297,7 +4682,10 @@ def main():
 
     import_csv_if_empty()
 
-    # Web 服务
+    # --------------------------------------------------------
+    # Web
+    # --------------------------------------------------------
+
     web_thread = threading.Thread(
         target=start_web_server,
         daemon=True,
@@ -4322,7 +4710,7 @@ def main():
     )
 
     print(
-        f"数据库："
+        "数据库："
         f"{'PostgreSQL' if USE_POSTGRES else 'SQLite'}"
     )
 
@@ -4330,10 +4718,15 @@ def main():
         "================================"
     )
 
+    # --------------------------------------------------------
+    # Telegram Application
+    # --------------------------------------------------------
+
     application = (
         Application
         .builder()
         .token(BOT_TOKEN)
+        .post_init(post_init)
         .build()
     )
 
@@ -4395,27 +4788,19 @@ def main():
         error_handler
     )
 
-    # 清除旧 webhook，使用 polling
-    async def post_init(app):
-        try:
-            await app.bot.delete_webhook(
-                drop_pending_updates=True
-            )
-
-            print(
-                "旧 Webhook 已清理"
-            )
-
-        except Exception:
-            traceback.print_exc()
-
-    application.post_init = post_init
+    # --------------------------------------------------------
+    # Polling
+    # --------------------------------------------------------
 
     application.run_polling(
         drop_pending_updates=True,
         close_loop=False,
     )
 
+
+# ============================================================
+# 程序入口
+# ============================================================
 
 if __name__ == "__main__":
     main()
