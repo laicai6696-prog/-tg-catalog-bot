@@ -319,6 +319,34 @@ def get_product(product_id):
     )
 
 
+def update_product(product_id, name, code, category, price, stock, description):
+    execute(
+        """UPDATE products SET name = {p}, code = {p}, category = {p}, price = {p}, stock = {p}, description = {p} WHERE id = {p}""".format(p=placeholder()),
+        (name, code, category, price, stock, description, product_id),
+    )
+
+
+def set_product_active(product_id, active):
+    execute(
+        "UPDATE products SET active = " + placeholder() + " WHERE id = " + placeholder(),
+        (1 if active else 0, product_id),
+    )
+
+
+def delete_product(product_id):
+    execute(
+        "DELETE FROM products WHERE id = " + placeholder(),
+        (product_id,),
+    )
+
+
+def set_product_photo(product_id, photo_id):
+    execute(
+        "UPDATE products SET photo_id = " + placeholder() + " WHERE id = " + placeholder(),
+        (photo_id, product_id),
+    )
+
+
 def get_products(category=None, keyword=None, active_only=True):
     sql = "SELECT * FROM products WHERE 1=1"
     params = []
@@ -960,6 +988,28 @@ async def handle_text(update, context):
         )
         return
 
+    if context.user_data.get("admin_edit_step") == "text":
+        if not is_admin(update.effective_user.id):
+            context.user_data.clear()
+            return
+        product_id = context.user_data.get("admin_edit_product_id")
+        data, error = parse_product_text(text)
+        if error:
+            await update.message.reply_text(error)
+            return
+        if not get_product(product_id):
+            context.user_data.clear()
+            await update.message.reply_text("ååä¸å­å¨ï¼ç¼è¾å·²åæ¶ã")
+            return
+        update_product(product_id, **data)
+        context.user_data.clear()
+        await update.message.reply_text("â ååä¿¡æ¯å·²æ´æ°ã", reply_markup=main_menu())
+        return
+
+    if context.user_data.get("admin_edit_step") == "photo":
+        await update.message.reply_text("è¯·åéå¾çï¼ä¸è¦åéæå­ã")
+        return
+
     inquiry_product_id = context.user_data.get("inquiry_product_id")
 
     if inquiry_product_id is not None or context.user_data.get("inquiry_product_name"):
@@ -1016,6 +1066,22 @@ async def handle_photo(update, context):
         await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
         return
 
+    if context.user_data.get("admin_edit_step") == "photo":
+        product_id = context.user_data.get("admin_photo_product_id")
+        if not product_id or not get_product(product_id):
+            context.user_data.clear()
+            await update.message.reply_text("ååä¸å­å¨ï¼æä½å·²åæ¶ã")
+            return
+        telegram_photo = update.message.photo[-1]
+        set_product_photo(product_id, telegram_photo.file_id)
+        try:
+            await update.message.delete()
+        except Exception as exc:
+            print(f"[PHOTO] å é¤æ´æ¢å¾çæ¶æ¯å¤±è´¥: {exc}")
+        context.user_data.clear()
+        await update.effective_chat.send_message("â ååå¾çå·²æ´æ¢ã", reply_markup=main_menu())
+        return
+
     add_step = context.user_data.get("add_step")
 
     if add_step != "photo":
@@ -1056,6 +1122,95 @@ async def handle_photo(update, context):
         "\u2705 \u5546\u54c1\u56fe\u7247\u5df2\u4fdd\u5b58\uff0c\u5546\u54c1\u6dfb\u52a0\u5b8c\u6210\u3002",
         reply_markup=main_menu(),
     )
+
+
+async def admin_edit_start(update, context, product_id):
+    if not is_admin(update.effective_user.id):
+        return
+    product = get_product(product_id)
+    if not product:
+        await update.effective_message.reply_text("ååä¸å­å¨ã")
+        return
+    context.user_data.clear()
+    context.user_data["admin_edit_product_id"] = product_id
+    context.user_data["admin_edit_step"] = "text"
+    await update.effective_message.reply_text(
+        "è¯·åéæ°çååä¿¡æ¯ï¼æ ¼å¼ï¼\n\n"
+        "åç§°|ç¼å·|åç±»|ä»·æ ¼|åºå­|æè¿°\n\n"
+        f"å½åï¼{product.get('name','')}|{product.get('code','')}|{product.get('category','')}|{product.get('price','')}|{product.get('stock','')}|{product.get('description','') or ''}\n\n"
+        "åç±»ä½¿ç¨ c1-c12ãåé /cancel åæ¶ã"
+    )
+
+
+async def admin_replace_photo_start(update, context, product_id):
+    if not is_admin(update.effective_user.id):
+        return
+    product = get_product(product_id)
+    if not product:
+        await update.effective_message.reply_text("ååä¸å­å¨ã")
+        return
+    context.user_data.clear()
+    context.user_data["admin_photo_product_id"] = product_id
+    context.user_data["admin_edit_step"] = "photo"
+    await update.effective_message.reply_text(
+        f"è¯·åéååã{product.get('name','')}ãçæ°å¾çã\nåé /cancel åæ¶ã"
+    )
+
+
+async def admin_toggle_product(update, context, product_id):
+    if not is_admin(update.effective_user.id):
+        return
+    product = get_product(product_id)
+    if not product:
+        await update.effective_message.reply_text("ååä¸å­å¨ã")
+        return
+    new_active = 0 if int(product.get("active", 0)) == 1 else 1
+    set_product_active(product_id, new_active)
+    await update.effective_message.reply_text(
+        f"â {product.get('name','')} å·²{'ä¸æ¶' if new_active else 'ä¸æ¶'}ã"
+    )
+    await admin_list(update, context)
+
+
+async def admin_delete_confirm(update, context, product_id):
+    if not is_admin(update.effective_user.id):
+        return
+    product = get_product(product_id)
+    if not product:
+        await update.effective_message.reply_text("ååä¸å­å¨ã")
+        return
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("â ï¸ ç¡®è®¤å é¤", callback_data=f"admin:delok:{product_id}"),
+            InlineKeyboardButton("åæ¶", callback_data="admin:list"),
+        ]
+    ])
+    await update.effective_message.reply_text(
+        f"ç¡®å®å é¤ååï¼\n\n#{product_id} {product.get('name','')} [{product.get('code','')}]\n\nå é¤åæ°æ®åºä¸­çååè®°å½ä¼è¢«å é¤ã",
+        reply_markup=keyboard,
+    )
+
+
+async def admin_delete_product(update, context, product_id):
+    if not is_admin(update.effective_user.id):
+        return
+    product = get_product(product_id)
+    if not product:
+        await update.effective_message.reply_text("ååå·²ç»ä¸å­å¨ã")
+        return
+    delete_product(product_id)
+    await update.effective_message.reply_text(f"â å·²å é¤ï¼{product.get('name','')} [{product.get('code','')}]")
+    await admin_list(update, context)
+
+
+async def admin_mark_inquiry(update, context, inquiry_id, status):
+    if not is_admin(update.effective_user.id):
+        return
+    execute(
+        "UPDATE inquiries SET status = " + placeholder() + " WHERE id = " + placeholder(),
+        (status, inquiry_id),
+    )
+    await admin_inquiries(update, context)
 
 
 async def admin_command(update, context):
@@ -1187,50 +1342,83 @@ async def admin_csv(update, context):
 
 
 async def admin_list(update, context):
+    if not is_admin(update.effective_user.id):
+        return
     products = get_products(active_only=False)
 
     if not products:
-        await update.effective_message.reply_text("\u6682\u65e0\u5546\u54c1\u3002")
+        await update.effective_message.reply_text("ææ ååã")
         return
 
-    lines = ["\U0001f4e6 \u5546\u54c1\u5217\u8868"]
-
+    # Telegram åæ¡æ¶æ¯æé®æ°éæ§å¶ï¼æå¤å±ç¤ºå100ä¸ªååã
+    keyboard = []
     for product in products[:100]:
-        status = "\u4e0a\u67b6" if int(product.get("active", 0)) == 1 else "\u4e0b\u67b6"
-        photo = "\u6709\u56fe" if product.get("photo_id") else "\u65e0\u56fe"
+        pid = int(product["id"])
+        name = str(product.get("name") or "")
+        code = str(product.get("code") or "")
+        status = "ä¸æ¶" if int(product.get("active", 0)) == 1 else "ä¸æ¶"
+        keyboard.append([InlineKeyboardButton(
+            f"#{pid} {name[:28]} [{status}]", callback_data=f"admin:edit:{pid}"
+        )])
 
-        lines.append(
-            f"#{product['id']} {product['name']} "
-            f"[{product.get('code', '')}] | {status} | {photo}"
-        )
-
-    await update.effective_message.reply_text("\n".join(lines))
+    keyboard.append([InlineKeyboardButton("â¬ï¸ è¿ååå°", callback_data="admin:home")])
+    await update.effective_message.reply_text(
+        f"ð¦ ååç®¡çï¼å± {len(products)} ä¸ªï¼\nç¹å»ååè¿å¥ç¼è¾ï¼",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def admin_inquiries(update, context):
-    rows = fetch_all(
-        "SELECT * FROM inquiries ORDER BY id DESC LIMIT 50"
-    )
-
+    if not is_admin(update.effective_user.id):
+        return
+    rows = fetch_all("SELECT * FROM inquiries ORDER BY id DESC LIMIT 50")
     if not rows:
-        await update.effective_message.reply_text("\u6682\u65e0\u8be2\u4ef7\u8bb0\u5f55\u3002")
+        await update.effective_message.reply_text("ææ è¯¢ä»·è®°å½ã")
         return
 
-    lines = ["\U0001f4ac \u6700\u8fd1\u8be2\u4ef7"]
-
+    keyboard = []
     for row in rows:
-        username = row.get("username") or "\u65e0\u7528\u6237\u540d"
+        iid = int(row["id"])
         status = row.get("status") or "new"
+        status_text = "å¾å¤ç" if status == "new" else "å·²å¤ç"
+        product = str(row.get("product") or "æªæå®")
+        username = row.get("username") or "æ ç¨æ·å"
+        title = f"#{iid} {product[:20]} | {status_text}"
+        keyboard.append([InlineKeyboardButton(title, callback_data=f"admin:inq:{iid}")])
 
-        lines.append(
-            f"#{row['id']} | {username} | {row.get('product', '')}\n"
-            f"{row.get('message', '')}\n"
-            f"\u72b6\u6001\uff1a{status}"
-        )
-
+    keyboard.append([InlineKeyboardButton("â¬ï¸ è¿ååå°", callback_data="admin:home")])
     await update.effective_message.reply_text(
-        "\n\n".join(lines)
+        "ð¬ è¯¢ä»·ç®¡çï¼æè¿50æ¡ï¼\nç¹å»è®°å½æ¥çè¯¦æï¼",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
+
+async def admin_inquiry_detail(update, context, inquiry_id):
+    if not is_admin(update.effective_user.id):
+        return
+    row = fetch_one("SELECT * FROM inquiries WHERE id = " + placeholder(), (inquiry_id,))
+    if not row:
+        await update.effective_message.reply_text("è¯¢ä»·è®°å½ä¸å­å¨ã")
+        return
+    username = row.get("username") or "æ ç¨æ·å"
+    status = row.get("status") or "new"
+    status_text = "å¾å¤ç" if status == "new" else "å·²å¤ç"
+    text = (
+        f"ð¬ è¯¢ä»· #{inquiry_id}\n\n"
+        f"ååï¼{row.get('product') or 'æªæå®'}\n"
+        f"ç¨æ·ï¼@{username}\n"
+        f"ç¨æ·IDï¼{row.get('user_id') or ''}\n"
+        f"ç¶æï¼{status_text}\n"
+        f"æ¶é´ï¼{row.get('created_at') or ''}\n\n"
+        f"åå®¹ï¼{row.get('message') or ''}"
+    )
+    next_status = "done" if status == "new" else "new"
+    next_text = "â æ è®°å·²å¤ç" if status == "new" else "â©ï¸ æ¢å¤å¾å¤ç"
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(next_text, callback_data=f"admin:inqstatus:{inquiry_id}:{next_status}")],
+        [InlineKeyboardButton("â¬ï¸ è¿åè¯¢ä»·", callback_data="admin:inquiries")],
+    ])
+    await update.effective_message.reply_text(text, reply_markup=keyboard)
 
 
 def safe_extract_zip(zip_path, target_dir):
@@ -1439,6 +1627,13 @@ async def process_zip_import(update, context, document):
                     (telegram_photo.file_id, product_id),
                 )
                 matched += 1
+                try:
+                    await context.bot.delete_message(
+                        chat_id=update.effective_chat.id,
+                        message_id=sent.message_id,
+                    )
+                except Exception as exc:
+                    print(f"[ZIP] å é¤ä¸´æ¶ååå¾çæ¶æ¯å¤±è´¥: {exc}")
             except Exception:
                 traceback.print_exc()
                 failed.append(code)
@@ -1459,6 +1654,10 @@ async def process_zip_import(update, context, document):
         if failed:
             result += "\n\n\u274c \u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff1a" + ", ".join(failed[:30])
         await status_message.edit_text(result)
+        try:
+            await update.message.delete()
+        except Exception as exc:
+            print(f"[ZIP] å é¤ä¸ä¼ ZIPæ¶æ¯å¤±è´¥: {exc}")
 
     except Exception as exc:
         traceback.print_exc()
@@ -1536,6 +1735,13 @@ async def process_zip(update, context, document):
                 )
 
                 matched += 1
+                try:
+                    await context.bot.delete_message(
+                        chat_id=update.effective_chat.id,
+                        message_id=message.message_id,
+                    )
+                except Exception as exc:
+                    print(f"[ZIP] å é¤ä¸´æ¶å¾çæ¶æ¯å¤±è´¥: {exc}")
 
             except Exception:
                 traceback.print_exc()
@@ -1552,6 +1758,10 @@ async def process_zip(update, context, document):
             result += "\n\n\u672a\u5339\u914d\u5546\u54c1\uff1a\n" + "\n".join(failed[:30])
 
         await status_message.edit_text(result)
+        try:
+            await update.message.delete()
+        except Exception as exc:
+            print(f"[ZIP] å é¤ä¸ä¼ ZIPæ¶æ¯å¤±è´¥: {exc}")
 
     except Exception as exc:
         traceback.print_exc()
@@ -1583,6 +1793,10 @@ async def handle_document(update, context):
             f"CSV \u5df2\u4fdd\u5b58\uff1a{target.name}\n"
             "\u5982\u679c\u6570\u636e\u5e93\u4e3a\u7a7a\uff0c\u53ef\u4ee5\u4f7f\u7528 /admin \u5bfc\u5165\u3002"
         )
+        try:
+            await update.message.delete()
+        except Exception as exc:
+            print(f"[CSV] å é¤ä¸ä¼ CSVæ¶æ¯å¤±è´¥: {exc}")
         return
 
     await update.message.reply_text(
@@ -1634,6 +1848,84 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw_id = data.split(":", 1)[1]
         if raw_id.isdigit():
             await start_inquiry(update, context, int(raw_id))
+        return
+
+    if data == "admin:home":
+        if is_admin(update.effective_user.id):
+            await admin_command(update, context)
+        return
+
+    if data.startswith("admin:edit:"):
+        if is_admin(update.effective_user.id):
+            pid = data.split(":")[-1]
+            if pid.isdigit():
+                product = get_product(int(pid))
+                if product:
+                    status = "ä¸æ¶" if int(product.get("active", 0)) == 1 else "ä¸æ¶"
+                    keyboard = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton("âï¸ ç¼è¾èµæ", callback_data=f"admin:edittext:{pid}"),
+                            InlineKeyboardButton("ð¼ æ´æ¢å¾ç", callback_data=f"admin:photo:{pid}"),
+                        ],
+                        [
+                            InlineKeyboardButton("â¬ï¸/â¬ï¸ ä¸ä¸æ¶", callback_data=f"admin:toggle:{pid}"),
+                            InlineKeyboardButton("ð å é¤", callback_data=f"admin:delete:{pid}"),
+                        ],
+                        [InlineKeyboardButton("â¬ï¸ è¿ååååè¡¨", callback_data="admin:list")],
+                    ])
+                    await query.message.reply_text(
+                        f"ð¦ #{pid} {product.get('name','')}\n\n"
+                        f"ç¼å·ï¼{product.get('code','')}\n"
+                        f"åç±»ï¼{CATS.get(product.get('category',''), product.get('category',''))}\n"
+                        f"ä»·æ ¼ï¼{product.get('price','')}\n"
+                        f"åºå­ï¼{product.get('stock','')}\n"
+                        f"ç¶æï¼{status}\n"
+                        f"å¾çï¼{'æ' if product.get('photo_id') else 'æ '}\n"
+                        f"æè¿°ï¼{product.get('description') or 'æ '}",
+                        reply_markup=keyboard,
+                    )
+        return
+
+    if data.startswith("admin:edittext:"):
+        pid = data.split(":")[-1]
+        if pid.isdigit():
+            await admin_edit_start(update, context, int(pid))
+        return
+
+    if data.startswith("admin:photo:"):
+        pid = data.split(":")[-1]
+        if pid.isdigit():
+            await admin_replace_photo_start(update, context, int(pid))
+        return
+
+    if data.startswith("admin:toggle:"):
+        pid = data.split(":")[-1]
+        if pid.isdigit():
+            await admin_toggle_product(update, context, int(pid))
+        return
+
+    if data.startswith("admin:delete:"):
+        pid = data.split(":")[-1]
+        if pid.isdigit():
+            await admin_delete_confirm(update, context, int(pid))
+        return
+
+    if data.startswith("admin:delok:"):
+        pid = data.split(":")[-1]
+        if pid.isdigit():
+            await admin_delete_product(update, context, int(pid))
+        return
+
+    if data.startswith("admin:inq:"):
+        pid = data.split(":")[-1]
+        if pid.isdigit():
+            await admin_inquiry_detail(update, context, int(pid))
+        return
+
+    if data.startswith("admin:inqstatus:"):
+        parts = data.split(":")
+        if len(parts) == 4 and parts[2].isdigit():
+            await admin_mark_inquiry(update, context, int(parts[2]), parts[3])
         return
 
     if data == "admin:status":
