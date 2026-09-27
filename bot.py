@@ -39,22 +39,22 @@ PORT = int(os.getenv("PORT", "10000"))
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 CSV_FILE = BASE_DIR / os.getenv(
     "CSV_FILE",
-    "Telegramååå¯¼å¥è¡¨_93ä¸ª_å¯ç´æ¥å¯¼å¥.csv"
+    "Telegram\u5546\u54c1\u5bfc\u5165\u8868_93\u4e2a_\u53ef\u76f4\u63a5\u5bfc\u5165.csv"
 )
 
 CATS = {
-    "c1": "åå¤©ä¸ç³»å",
-    "c2": "çç«ç³»å",
-    "c3": "åäº¬ç³»å",
-    "c4": "è·è±ç³»å",
-    "c5": "èèçç³»å",
-    "c6": "ç¡ä¸¹ç³»å",
-    "c7": "é»éå¶ç³»å",
-    "c8": "èçç³»å",
-    "c9": "å©ç¾¤ç³»å",
-    "c10": "é»é¹¤æ¥¼ç³»å",
-    "c11": "ä¸­åç³»å",
-    "c12": "ç½ç®ç³»å",
+    "c1": "\u548c\u5929\u4e0b\u7cfb\u5217",
+    "c2": "\u718a\u732b\u7cfb\u5217",
+    "c3": "\u5357\u4eac\u7cfb\u5217",
+    "c4": "\u8377\u82b1\u7cfb\u5217",
+    "c5": "\u8299\u84c9\u738b\u7cfb\u5217",
+    "c6": "\u7261\u4e39\u7cfb\u5217",
+    "c7": "\u9ec4\u91d1\u53f6\u7cfb\u5217",
+    "c8": "\u82cf\u70df\u7cfb\u5217",
+    "c9": "\u5229\u7fa4\u7cfb\u5217",
+    "c10": "\u9ec4\u9e64\u697c\u7cfb\u5217",
+    "c11": "\u4e2d\u534e\u7cfb\u5217",
+    "c12": "\u767d\u76ae\u7cfb\u5217",
 }
 
 CAT_ALIASES = {}
@@ -284,15 +284,15 @@ def import_csv_if_empty():
         reader = csv.DictReader(f)
 
         for row in reader:
-            name = str(row.get("name", row.get("åç§°", ""))).strip()
-            code = str(row.get("code", row.get("ç¼å·", ""))).strip()
+            name = str(row.get("name", row.get("\u540d\u79f0", ""))).strip()
+            code = str(row.get("code", row.get("\u7f16\u53f7", ""))).strip()
             category = normalize_category(
-                row.get("category", row.get("åç±»", ""))
+                row.get("category", row.get("\u5206\u7c7b", ""))
             )
-            price = str(row.get("price", row.get("ä»·æ ¼", ""))).strip()
-            stock = str(row.get("stock", row.get("åºå­", ""))).strip()
+            price = str(row.get("price", row.get("\u4ef7\u683c", ""))).strip()
+            stock = str(row.get("stock", row.get("\u5e93\u5b58", ""))).strip()
             description = str(
-                row.get("description", row.get("æè¿°", ""))
+                row.get("description", row.get("\u63cf\u8ff0", ""))
             ).strip()
 
             if not name:
@@ -551,7 +551,7 @@ class WebHandler(BaseHTTPRequestHandler):
             username = str(data.get("username", "")).strip()
 
             if not product:
-                self._json({"ok": False, "error": "è¯·éæ©åå"}, 400)
+                self._json({"ok": False, "error": "\u8bf7\u9009\u62e9\u5546\u54c1"}, 400)
                 return
 
             sql = """
@@ -604,20 +604,20 @@ async def send_product_message(update, context, product):
     description = product.get("description", "")
 
     text = (
-        f"ð¦ {name}\n"
-        f"ç¼å·ï¼{code}\n"
-        f"åç±»ï¼{CATS.get(category, category)}\n"
-        f"ä»·æ ¼ï¼{price}\n"
-        f"åºå­ï¼{stock}\n"
+        f"\U0001f4e6 {name}\n"
+        f"\u7f16\u53f7\uff1a{code}\n"
+        f"\u5206\u7c7b\uff1a{CATS.get(category, category)}\n"
+        f"\u4ef7\u683c\uff1a{price}\n"
+        f"\u5e93\u5b58\uff1a{stock}\n"
     )
 
     if description:
-        text += f"è¯´æï¼{description}\n"
+        text += f"\u8bf4\u660e\uff1a{description}\n"
 
     keyboard = [
         [
             InlineKeyboardButton(
-                "ð¬ è¯¢ä»·",
+                "\U0001f4ac \u8be2\u4ef7",
                 callback_data=f"inquiry:{product['id']}",
             )
         ]
@@ -646,12 +646,12 @@ def main_menu():
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("ðï¸ ååç®å½", callback_data="catalog"),
-                InlineKeyboardButton("ð åå", callback_data="products"),
+                InlineKeyboardButton("\U0001f6cd\ufe0f \u5546\u54c1\u76ee\u5f55", callback_data="catalog"),
+                InlineKeyboardButton("\U0001f4cb \u5546\u54c1", callback_data="products"),
             ],
             [
-                InlineKeyboardButton("ð¬ è¯¢ä»·", callback_data="ask"),
-                InlineKeyboardButton("â æ·»å åå", callback_data="add"),
+                InlineKeyboardButton("\U0001f4ac \u8be2\u4ef7", callback_data="ask"),
+                InlineKeyboardButton("\u2795 \u6dfb\u52a0\u5546\u54c1", callback_data="add"),
             ],
         ]
     )
@@ -662,8 +662,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("pending_product_id", None)
 
     text = (
-        "æ¬¢è¿ä½¿ç¨ååç®å½æºå¨äºº\n\n"
-        "è¯·éæ©åè½ï¼"
+        "\u6b22\u8fce\u4f7f\u7528\u5546\u54c1\u76ee\u5f55\u673a\u5668\u4eba\n\n"
+        "\u8bf7\u9009\u62e9\u529f\u80fd\uff1a"
     )
 
     await update.message.reply_text(
@@ -675,7 +675,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
-        "å·²åæ¶å½åæä½ã",
+        "\u5df2\u53d6\u6d88\u5f53\u524d\u64cd\u4f5c\u3002",
         reply_markup=main_menu(),
     )
 
@@ -699,11 +699,11 @@ async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append(row)
 
     keyboard.append(
-        [InlineKeyboardButton("â¬ï¸ è¿å", callback_data="home")]
+        [InlineKeyboardButton("\u2b05\ufe0f \u8fd4\u56de", callback_data="home")]
     )
 
     await update.effective_message.reply_text(
-        "è¯·éæ©ååç³»åï¼",
+        "\u8bf7\u9009\u62e9\u5546\u54c1\u7cfb\u5217\uff1a",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -713,9 +713,9 @@ async def show_category(update, context, category):
 
     if not products:
         await update.effective_message.reply_text(
-            "è¿ä¸ªç³»åææ¶æ²¡æä¸æ¶ååã",
+            "\u8fd9\u4e2a\u7cfb\u5217\u6682\u65f6\u6ca1\u6709\u4e0a\u67b6\u5546\u54c1\u3002",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("â¬ï¸ è¿åç®å½", callback_data="catalog")]]
+                [[InlineKeyboardButton("\u2b05\ufe0f \u8fd4\u56de\u76ee\u5f55", callback_data="catalog")]]
             ),
         )
         return
@@ -738,11 +738,11 @@ async def show_category(update, context, category):
         )
 
     keyboard.append(
-        [InlineKeyboardButton("â¬ï¸ è¿åç®å½", callback_data="catalog")]
+        [InlineKeyboardButton("\u2b05\ufe0f \u8fd4\u56de\u76ee\u5f55", callback_data="catalog")]
     )
 
     await update.effective_message.reply_text(
-        f"ð {CATS.get(category, category)}\n\nè¯·éæ©ååï¼",
+        f"\U0001f4c2 {CATS.get(category, category)}\n\n\u8bf7\u9009\u62e9\u5546\u54c1\uff1a",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -751,7 +751,7 @@ async def show_product(update, context, product_id):
     product = get_product(product_id)
 
     if not product or int(product.get("active", 0)) != 1:
-        await update.effective_message.reply_text("ååä¸å­å¨æå·²ä¸æ¶ã")
+        await update.effective_message.reply_text("\u5546\u54c1\u4e0d\u5b58\u5728\u6216\u5df2\u4e0b\u67b6\u3002")
         return
 
     name = product.get("name", "")
@@ -762,27 +762,27 @@ async def show_product(update, context, product_id):
     description = product.get("description", "")
 
     text = (
-        f"ð¦ {name}\n"
-        f"ç¼å·ï¼{code}\n"
-        f"åç±»ï¼{CATS.get(category, category)}\n"
-        f"ä»·æ ¼ï¼{price}\n"
-        f"åºå­ï¼{stock}\n"
+        f"\U0001f4e6 {name}\n"
+        f"\u7f16\u53f7\uff1a{code}\n"
+        f"\u5206\u7c7b\uff1a{CATS.get(category, category)}\n"
+        f"\u4ef7\u683c\uff1a{price}\n"
+        f"\u5e93\u5b58\uff1a{stock}\n"
     )
 
     if description:
-        text += f"è¯´æï¼{description}\n"
+        text += f"\u8bf4\u660e\uff1a{description}\n"
 
     keyboard = InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "ð¬ ç«å³è¯¢ä»·",
+                    "\U0001f4ac \u7acb\u5373\u8be2\u4ef7",
                     callback_data=f"inquiry:{product_id}",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    "â¬ï¸ è¿åç³»å",
+                    "\u2b05\ufe0f \u8fd4\u56de\u7cfb\u5217",
                     callback_data=f"cat:{category}",
                 )
             ],
@@ -812,7 +812,7 @@ async def show_all_products(update, context):
     products = get_products(active_only=True)
 
     if not products:
-        await update.effective_message.reply_text("ææ ååã")
+        await update.effective_message.reply_text("\u6682\u65e0\u5546\u54c1\u3002")
         return
 
     keyboard = []
@@ -833,11 +833,11 @@ async def show_all_products(update, context):
         )
 
     keyboard.append(
-        [InlineKeyboardButton("â¬ï¸ è¿å", callback_data="home")]
+        [InlineKeyboardButton("\u2b05\ufe0f \u8fd4\u56de", callback_data="home")]
     )
 
     await update.effective_message.reply_text(
-        "ð åååè¡¨ï¼",
+        "\U0001f4cb \u5546\u54c1\u5217\u8868\uff1a",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -851,28 +851,28 @@ async def start_inquiry(update, context, product_id=None):
             context.user_data["inquiry_product_name"] = product["name"]
 
     await update.effective_message.reply_text(
-        "è¯·ç´æ¥åéä½ è¦è¯¢ä»·çåå®¹ã\n\n"
-        "ä¾å¦ï¼\n"
-        "æè¦è¯¢ä»· 10 ä»¶\n"
-        "æåéï¼æ°é + åååç§°\n\n"
-        "åé /cancel å¯ä»¥åæ¶ã"
+        "\u8bf7\u76f4\u63a5\u53d1\u9001\u4f60\u8981\u8be2\u4ef7\u7684\u5185\u5bb9\u3002\n\n"
+        "\u4f8b\u5982\uff1a\n"
+        "\u6211\u8981\u8be2\u4ef7 10 \u4ef6\n"
+        "\u6216\u53d1\u9001\uff1a\u6570\u91cf + \u5546\u54c1\u540d\u79f0\n\n"
+        "\u53d1\u9001 /cancel \u53ef\u4ee5\u53d6\u6d88\u3002"
     )
 
 
 async def add_product_start(update, context):
     if not is_admin(update.effective_user.id):
-        await update.effective_message.reply_text("ä½ æ²¡æç®¡çåæéã")
+        await update.effective_message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
         return
 
     context.user_data["add_step"] = "text"
 
     await update.effective_message.reply_text(
-        "è¯·è¾å¥ååä¿¡æ¯ï¼æ ¼å¼ï¼\n\n"
-        "åç§°|ç¼å·|åç±»|ä»·æ ¼|åºå­|æè¿°\n\n"
-        "ä¾å¦ï¼\n"
-        "ç¤ºä¾åå|P001|c1|100|20|ååè¯´æ\n\n"
-        "åç±»å¯ä»¥å¡«å c1-c12ï¼ä¹å¯ä»¥å¡«åç³»ååç§°ã\n"
-        "åé /cancel åæ¶ã"
+        "\u8bf7\u8f93\u5165\u5546\u54c1\u4fe1\u606f\uff0c\u683c\u5f0f\uff1a\n\n"
+        "\u540d\u79f0|\u7f16\u53f7|\u5206\u7c7b|\u4ef7\u683c|\u5e93\u5b58|\u63cf\u8ff0\n\n"
+        "\u4f8b\u5982\uff1a\n"
+        "\u793a\u4f8b\u5546\u54c1|P001|c1|100|20|\u5546\u54c1\u8bf4\u660e\n\n"
+        "\u5206\u7c7b\u53ef\u4ee5\u586b\u5199 c1-c12\uff0c\u4e5f\u53ef\u4ee5\u586b\u5199\u7cfb\u5217\u540d\u79f0\u3002\n"
+        "\u53d1\u9001 /cancel \u53d6\u6d88\u3002"
     )
 
 
@@ -880,7 +880,7 @@ def parse_product_text(text):
     parts = [x.strip() for x in text.split("|")]
 
     if len(parts) < 5:
-        return None, "æ ¼å¼ä¸æ­£ç¡®ï¼è³å°éè¦ 5 é¡¹ã"
+        return None, "\u683c\u5f0f\u4e0d\u6b63\u786e\uff0c\u81f3\u5c11\u9700\u8981 5 \u9879\u3002"
 
     name = parts[0]
     code = parts[1]
@@ -890,10 +890,10 @@ def parse_product_text(text):
     description = "|".join(parts[5:]).strip() if len(parts) > 5 else ""
 
     if not name:
-        return None, "åååç§°ä¸è½ä¸ºç©ºã"
+        return None, "\u5546\u54c1\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a\u3002"
 
     if category not in CATS:
-        return None, "åç±»éè¯¯ï¼è¯·ä½¿ç¨ c1-c12 ææ­£ç¡®çç³»ååç§°ã"
+        return None, "\u5206\u7c7b\u9519\u8bef\uff0c\u8bf7\u4f7f\u7528 c1-c12 \u6216\u6b63\u786e\u7684\u7cfb\u5217\u540d\u79f0\u3002"
 
     return {
         "name": name,
@@ -917,7 +917,7 @@ async def handle_text(update, context):
     if add_step == "text":
         if not is_admin(update.effective_user.id):
             context.user_data.pop("add_step", None)
-            await update.message.reply_text("ä½ æ²¡æç®¡çåæéã")
+            await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
             return
 
         data, error = parse_product_text(text)
@@ -932,28 +932,28 @@ async def handle_text(update, context):
         context.user_data["add_step"] = "photo"
 
         await update.message.reply_text(
-            f"ååå·²æ·»å ï¼ç¼å· IDï¼{product_id}\n\n"
-            "è¯·åéååå¾çã\n"
-            "å¦æä¸éè¦å¾çï¼è¯·åéï¼è·³è¿"
+            f"\u5546\u54c1\u5df2\u6dfb\u52a0\uff0c\u7f16\u53f7 ID\uff1a{product_id}\n\n"
+            "\u8bf7\u53d1\u9001\u5546\u54c1\u56fe\u7247\u3002\n"
+            "\u5982\u679c\u4e0d\u9700\u8981\u56fe\u7247\uff0c\u8bf7\u53d1\u9001\uff1a\u8df3\u8fc7"
         )
         return
 
     if add_step == "photo":
         if not is_admin(update.effective_user.id):
             context.user_data.clear()
-            await update.message.reply_text("ä½ æ²¡æç®¡çåæéã")
+            await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
             return
 
-        if text == "è·³è¿":
+        if text == "\u8df3\u8fc7":
             context.user_data.clear()
             await update.message.reply_text(
-                "å·²è·³è¿å¾çï¼ååæ·»å å®æã",
+                "\u5df2\u8df3\u8fc7\u56fe\u7247\uff0c\u5546\u54c1\u6dfb\u52a0\u5b8c\u6210\u3002",
                 reply_markup=main_menu(),
             )
             return
 
         await update.message.reply_text(
-            "è¯·åéååå¾çï¼æèåéï¼è·³è¿"
+            "\u8bf7\u53d1\u9001\u5546\u54c1\u56fe\u7247\uff0c\u6216\u8005\u53d1\u9001\uff1a\u8df3\u8fc7"
         )
         return
 
@@ -988,8 +988,8 @@ async def handle_text(update, context):
         context.user_data.pop("inquiry_product_name", None)
 
         await update.message.reply_text(
-            "â å·²æ¶å°ä½ çè¯¢ä»·ä¿¡æ¯ã\n"
-            "æä»¬ä¼å°½å¿«èç³»ä½ ã",
+            "\u2705 \u5df2\u6536\u5230\u4f60\u7684\u8be2\u4ef7\u4fe1\u606f\u3002\n"
+            "\u6211\u4eec\u4f1a\u5c3d\u5feb\u8054\u7cfb\u4f60\u3002",
             reply_markup=main_menu(),
         )
 
@@ -1003,34 +1003,34 @@ async def handle_text(update, context):
         return
 
     await update.message.reply_text(
-        "è¯·éæ©åè½ï¼",
+        "\u8bf7\u9009\u62e9\u529f\u80fd\uff1a",
         reply_markup=main_menu(),
     )
 
 
 async def handle_photo(update, context):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("ä½ æ²¡æç®¡çåæéã")
+        await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
         return
 
     add_step = context.user_data.get("add_step")
 
     if add_step != "photo":
         await update.message.reply_text(
-            "å¦æä½ è¦ç»ååæ·»å å¾çï¼è¯·åä½¿ç¨ï¼â æ·»å åå"
+            "\u5982\u679c\u4f60\u8981\u7ed9\u5546\u54c1\u6dfb\u52a0\u56fe\u7247\uff0c\u8bf7\u5148\u4f7f\u7528\uff1a\u2795 \u6dfb\u52a0\u5546\u54c1"
         )
         return
 
     product_id = context.user_data.get("pending_product_id")
     if not product_id:
         context.user_data.clear()
-        await update.message.reply_text("æ²¡ææ¾å°å¾å¤çååã")
+        await update.message.reply_text("\u6ca1\u6709\u627e\u5230\u5f85\u5904\u7406\u5546\u54c1\u3002")
         return
 
     photos = update.message.photo
 
     if not photos:
-        await update.message.reply_text("æ²¡ææ£æµå°å¾çï¼è¯·éæ°åéã")
+        await update.message.reply_text("\u6ca1\u6709\u68c0\u6d4b\u5230\u56fe\u7247\uff0c\u8bf7\u91cd\u65b0\u53d1\u9001\u3002")
         return
 
     telegram_photo = photos[-1]
@@ -1044,14 +1044,14 @@ async def handle_photo(update, context):
     context.user_data.clear()
 
     await update.message.reply_text(
-        "â ååå¾çå·²ä¿å­ï¼ååæ·»å å®æã",
+        "\u2705 \u5546\u54c1\u56fe\u7247\u5df2\u4fdd\u5b58\uff0c\u5546\u54c1\u6dfb\u52a0\u5b8c\u6210\u3002",
         reply_markup=main_menu(),
     )
 
 
 async def admin_command(update, context):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("ä½ æ²¡æç®¡çåæéã")
+        await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
         return
 
     total = product_count()
@@ -1065,24 +1065,24 @@ async def admin_command(update, context):
     )
 
     text = (
-        "ð  ç®¡çåå°\n\n"
-        f"ååæ»æ°ï¼{total}\n"
-        f"ä¸æ¶ååï¼{int(active['c']) if active else 0}\n"
-        f"å¾å¤çè¯¢ä»·ï¼{int(inquiries['c']) if inquiries else 0}\n\n"
-        "è¯·éæ©æä½ï¼"
+        "\U0001f6e0 \u7ba1\u7406\u540e\u53f0\n\n"
+        f"\u5546\u54c1\u603b\u6570\uff1a{total}\n"
+        f"\u4e0a\u67b6\u5546\u54c1\uff1a{int(active['c']) if active else 0}\n"
+        f"\u5f85\u5904\u7406\u8be2\u4ef7\uff1a{int(inquiries['c']) if inquiries else 0}\n\n"
+        "\u8bf7\u9009\u62e9\u64cd\u4f5c\uff1a"
     )
 
     keyboard = [
         [
-            InlineKeyboardButton("ð ååç»è®¡", callback_data="admin:status"),
-            InlineKeyboardButton("ð¥ å¯¼å¥CSV", callback_data="admin:csv"),
+            InlineKeyboardButton("\U0001f4ca \u5546\u54c1\u7edf\u8ba1", callback_data="admin:status"),
+            InlineKeyboardButton("\U0001f4e5 \u5bfc\u5165CSV", callback_data="admin:csv"),
         ],
         [
-            InlineKeyboardButton("ð¦ åååè¡¨", callback_data="admin:list"),
-            InlineKeyboardButton("ð¬ è¯¢ä»·è®°å½", callback_data="admin:inquiries"),
+            InlineKeyboardButton("\U0001f4e6 \u5546\u54c1\u5217\u8868", callback_data="admin:list"),
+            InlineKeyboardButton("\U0001f4ac \u8be2\u4ef7\u8bb0\u5f55", callback_data="admin:inquiries"),
         ],
         [
-            InlineKeyboardButton("ð  è¿å", callback_data="home"),
+            InlineKeyboardButton("\U0001f3e0 \u8fd4\u56de", callback_data="home"),
         ],
     ]
 
@@ -1097,11 +1097,11 @@ async def notify_admins(context, product, message, username, user_id):
         return
 
     text = (
-        "ð æ°è¯¢ä»·\n\n"
-        f"ååï¼{product}\n"
-        f"ç¨æ·ï¼@{username if username else 'æ ç¨æ·å'}\n"
-        f"ç¨æ·IDï¼{user_id}\n"
-        f"åå®¹ï¼{message}"
+        "\U0001f514 \u65b0\u8be2\u4ef7\n\n"
+        f"\u5546\u54c1\uff1a{product}\n"
+        f"\u7528\u6237\uff1a@{username if username else '\u65e0\u7528\u6237\u540d'}\n"
+        f"\u7528\u6237ID\uff1a{user_id}\n"
+        f"\u5185\u5bb9\uff1a{message}"
     )
 
     for admin_id in ADMINS:
@@ -1123,10 +1123,10 @@ def notify_admins_sync(product, message, username):
                     {
                         "chat_id": admin_id,
                         "text": (
-                            "ð æ°è¯¢ä»·\n\n"
-                            f"ååï¼{product}\n"
-                            f"ç¨æ·ï¼@{username if username else 'æ ç¨æ·å'}\n"
-                            f"åå®¹ï¼{message}"
+                            "\U0001f514 \u65b0\u8be2\u4ef7\n\n"
+                            f"\u5546\u54c1\uff1a{product}\n"
+                            f"\u7528\u6237\uff1a@{username if username else '\u65e0\u7528\u6237\u540d'}\n"
+                            f"\u5185\u5bb9\uff1a{message}"
                         ),
                     },
                 )
@@ -1151,26 +1151,26 @@ async def admin_status(update, context):
     )
 
     await update.effective_message.reply_text(
-        "ð ååç»è®¡\n\n"
-        f"ååæ»æ°ï¼{total}\n"
-        f"ä¸æ¶ååï¼{int(active['c']) if active else 0}\n"
-        f"å·²æå¾çï¼{int(photos['c']) if photos else 0}\n"
-        f"æ°æ®åºï¼{'PostgreSQL' if db_is_postgres() else 'SQLite'}"
+        "\U0001f4ca \u5546\u54c1\u7edf\u8ba1\n\n"
+        f"\u5546\u54c1\u603b\u6570\uff1a{total}\n"
+        f"\u4e0a\u67b6\u5546\u54c1\uff1a{int(active['c']) if active else 0}\n"
+        f"\u5df2\u6709\u56fe\u7247\uff1a{int(photos['c']) if photos else 0}\n"
+        f"\u6570\u636e\u5e93\uff1a{'PostgreSQL' if db_is_postgres() else 'SQLite'}"
     )
 
 
 async def admin_csv(update, context):
     if not CSV_FILE.exists():
         await update.effective_message.reply_text(
-            f"æ²¡ææ¾å° CSV æä»¶ï¼{CSV_FILE.name}"
+            f"\u6ca1\u6709\u627e\u5230 CSV \u6587\u4ef6\uff1a{CSV_FILE.name}"
         )
         return
 
     imported = import_csv_if_empty()
 
     await update.effective_message.reply_text(
-        f"CSV æ£æ¥å®æã\n"
-        f"æ¬æ¬¡æ°å¢ï¼{imported} æ¡"
+        f"CSV \u68c0\u67e5\u5b8c\u6210\u3002\n"
+        f"\u672c\u6b21\u65b0\u589e\uff1a{imported} \u6761"
     )
 
 
@@ -1178,14 +1178,14 @@ async def admin_list(update, context):
     products = get_products(active_only=False)
 
     if not products:
-        await update.effective_message.reply_text("ææ ååã")
+        await update.effective_message.reply_text("\u6682\u65e0\u5546\u54c1\u3002")
         return
 
-    lines = ["ð¦ åååè¡¨"]
+    lines = ["\U0001f4e6 \u5546\u54c1\u5217\u8868"]
 
     for product in products[:100]:
-        status = "ä¸æ¶" if int(product.get("active", 0)) == 1 else "ä¸æ¶"
-        photo = "æå¾" if product.get("photo_id") else "æ å¾"
+        status = "\u4e0a\u67b6" if int(product.get("active", 0)) == 1 else "\u4e0b\u67b6"
+        photo = "\u6709\u56fe" if product.get("photo_id") else "\u65e0\u56fe"
 
         lines.append(
             f"#{product['id']} {product['name']} "
@@ -1201,19 +1201,19 @@ async def admin_inquiries(update, context):
     )
 
     if not rows:
-        await update.effective_message.reply_text("ææ è¯¢ä»·è®°å½ã")
+        await update.effective_message.reply_text("\u6682\u65e0\u8be2\u4ef7\u8bb0\u5f55\u3002")
         return
 
-    lines = ["ð¬ æè¿è¯¢ä»·"]
+    lines = ["\U0001f4ac \u6700\u8fd1\u8be2\u4ef7"]
 
     for row in rows:
-        username = row.get("username") or "æ ç¨æ·å"
+        username = row.get("username") or "\u65e0\u7528\u6237\u540d"
         status = row.get("status") or "new"
 
         lines.append(
             f"#{row['id']} | {username} | {row.get('product', '')}\n"
             f"{row.get('message', '')}\n"
-            f"ç¶æï¼{status}"
+            f"\u72b6\u6001\uff1a{status}"
         )
 
     await update.effective_message.reply_text(
@@ -1229,7 +1229,7 @@ def safe_extract_zip(zip_path, target_dir):
             member_path = (target_dir / member.filename).resolve()
 
             if not str(member_path).startswith(str(target_dir)):
-                raise ValueError("ZIP ååå«éæ³è·¯å¾")
+                raise ValueError("ZIP \u5305\u5305\u542b\u975e\u6cd5\u8def\u5f84")
 
             if member.is_dir():
                 member_path.mkdir(parents=True, exist_ok=True)
@@ -1286,15 +1286,15 @@ def find_image_for_product(product, files):
 
 async def process_zip(update, context, document):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("ä½ æ²¡æç®¡çåæéã")
+        await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
         return
 
     if not document.file_name.lower().endswith(".zip"):
-        await update.message.reply_text("è¯·ä¸ä¼  ZIP æä»¶ã")
+        await update.message.reply_text("\u8bf7\u4e0a\u4f20 ZIP \u6587\u4ef6\u3002")
         return
 
     status_message = await update.message.reply_text(
-        "æ­£å¨ä¸è½½ ZIPï¼è¯·ç¨å..."
+        "\u6b63\u5728\u4e0b\u8f7d ZIP\uff0c\u8bf7\u7a0d\u5019..."
     )
 
     temp_root = Path(tempfile.mkdtemp(prefix="catalog_zip_"))
@@ -1307,7 +1307,7 @@ async def process_zip(update, context, document):
         await telegram_file.download_to_drive(custom_path=str(zip_path))
 
         await status_message.edit_text(
-            "ZIP å·²ä¸è½½ï¼æ­£å¨è§£åå¹¶å¹éååå¾ç..."
+            "ZIP \u5df2\u4e0b\u8f7d\uff0c\u6b63\u5728\u89e3\u538b\u5e76\u5339\u914d\u5546\u54c1\u56fe\u7247..."
         )
 
         safe_extract_zip(zip_path, extract_dir)
@@ -1316,7 +1316,7 @@ async def process_zip(update, context, document):
         files = image_files(extract_dir)
 
         if not products:
-            await status_message.edit_text("æ°æ®åºä¸­æ²¡æååï¼æ æ³å¹éå¾çã")
+            await status_message.edit_text("\u6570\u636e\u5e93\u4e2d\u6ca1\u6709\u5546\u54c1\uff0c\u65e0\u6cd5\u5339\u914d\u56fe\u7247\u3002")
             return
 
         matched = 0
@@ -1356,21 +1356,21 @@ async def process_zip(update, context, document):
                 failed.append(product["name"])
 
         result = (
-            "â ZIP å¾çå¤çå®æ\n\n"
-            f"ååæ°éï¼{len(products)}\n"
-            f"å¹éæåï¼{matched}\n"
-            f"å¹éå¤±è´¥ï¼{len(failed)}"
+            "\u2705 ZIP \u56fe\u7247\u5904\u7406\u5b8c\u6210\n\n"
+            f"\u5546\u54c1\u6570\u91cf\uff1a{len(products)}\n"
+            f"\u5339\u914d\u6210\u529f\uff1a{matched}\n"
+            f"\u5339\u914d\u5931\u8d25\uff1a{len(failed)}"
         )
 
         if failed:
-            result += "\n\næªå¹éååï¼\n" + "\n".join(failed[:30])
+            result += "\n\n\u672a\u5339\u914d\u5546\u54c1\uff1a\n" + "\n".join(failed[:30])
 
         await status_message.edit_text(result)
 
     except Exception as exc:
         traceback.print_exc()
         await status_message.edit_text(
-            f"â ZIP å¤çå¤±è´¥ï¼{exc}"
+            f"\u274c ZIP \u5904\u7406\u5931\u8d25\uff1a{exc}"
         )
 
     finally:
@@ -1379,7 +1379,7 @@ async def process_zip(update, context, document):
 
 async def handle_document(update, context):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("ä½ æ²¡æç®¡çåæéã")
+        await update.message.reply_text("\u4f60\u6ca1\u6709\u7ba1\u7406\u5458\u6743\u9650\u3002")
         return
 
     document = update.message.document
@@ -1394,13 +1394,13 @@ async def handle_document(update, context):
         await telegram_file.download_to_drive(custom_path=str(target))
 
         await update.message.reply_text(
-            f"CSV å·²ä¿å­ï¼{target.name}\n"
-            "å¦ææ°æ®åºä¸ºç©ºï¼å¯ä»¥ä½¿ç¨ /admin å¯¼å¥ã"
+            f"CSV \u5df2\u4fdd\u5b58\uff1a{target.name}\n"
+            "\u5982\u679c\u6570\u636e\u5e93\u4e3a\u7a7a\uff0c\u53ef\u4ee5\u4f7f\u7528 /admin \u5bfc\u5165\u3002"
         )
         return
 
     await update.message.reply_text(
-        "æ¯æä¸ä¼  ZIP æ CSV æä»¶ã"
+        "\u652f\u6301\u4e0a\u4f20 ZIP \u6216 CSV \u6587\u4ef6\u3002"
     )
 
 
@@ -1412,7 +1412,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "home":
         await query.message.reply_text(
-            "è¯·éæ©åè½ï¼",
+            "\u8bf7\u9009\u62e9\u529f\u80fd\uff1a",
             reply_markup=main_menu(),
         )
         return
