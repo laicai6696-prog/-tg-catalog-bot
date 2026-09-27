@@ -16,7 +16,7 @@ from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -652,6 +652,9 @@ def main_menu():
             [
                 InlineKeyboardButton("\U0001f4ac \u8be2\u4ef7", callback_data="ask"),
                 InlineKeyboardButton("\u2795 \u6dfb\u52a0\u5546\u54c1", callback_data="add"),
+            ],
+            [
+                InlineKeyboardButton("\U0001f310 \u6253\u5f00\u5546\u54c1\u5c0f\u7a0b\u5e8f", web_app=WebAppInfo(url=WEB_URL)),
             ],
         ]
     )
@@ -1292,8 +1295,8 @@ async def process_zip_import(update, context, document):
     """Import one CSV plus numbered product images from a ZIP.
 
     Expected ZIP:
-      - one CSV containing the 93 product rows
-      - images named 01..93 with common image extensions
+      - one CSV containing exactly 93 product rows
+      - images named 01..93
     Mapping:
       01 -> P001, ..., 93 -> P093
     """
@@ -1317,11 +1320,9 @@ async def process_zip_import(update, context, document):
     try:
         telegram_file = await context.bot.get_file(document.file_id)
         await telegram_file.download_to_drive(custom_path=str(zip_path))
-
         await status_message.edit_text(
             "\u2705 ZIP \u5df2\u4e0b\u8f7d\uff0c\u6b63\u5728\u68c0\u67e5 CSV \u548c 93 \u5f20\u56fe\u7247..."
         )
-
         safe_extract_zip(zip_path, extract_dir)
 
         csv_files = [
@@ -1341,150 +1342,105 @@ async def process_zip_import(update, context, document):
 
         if len(rows) != 93:
             await status_message.edit_text(
-                f"\u274c CSV \u5fc5\u987b\u662f 93 \u6761\u5546\u54c1\uff0c\u5f53\u524d\u662f {len(rows)} \u6761\u3002\n"
-                "\u672c\u6b21\u5c1a\u672a\u5bfc\u5165\u3002"
+                f"\u274c CSV \u5fc5\u987b\u662f 93 \u6761\u5546\u54c1\uff0c\u5f53\u524d\u662f {len(rows)} \u6761\u3002\n\u672c\u6b21\u672a\u5bfc\u5165\u3002"
             )
             return
 
         parsed = []
         seen_codes = set()
-
         for index, row in enumerate(rows, start=1):
             name = str(row.get("name", row.get("\u540d\u79f0", ""))).strip()
-            code = str(row.get("code", row.get("\u7f16\u53f7", ""))).strip()
-            category = normalize_category(
-                row.get("category", row.get("\u5206\u7c7b", ""))
-            )
+            code = str(row.get("code", row.get("\u7f16\u53f7", ""))).strip().upper()
+            category = normalize_category(row.get("category", row.get("\u5206\u7c7b", "")))
             price = str(row.get("price", row.get("\u4ef7\u683c", ""))).strip()
             stock = str(row.get("stock", row.get("\u5e93\u5b58", ""))).strip()
-            description = str(
-                row.get("description", row.get("\u63cf\u8ff0", ""))
-            ).strip()
+            description = str(row.get("description", row.get("\u63cf\u8ff0", ""))).strip()
 
             if not name or not code or category not in CATS:
                 await status_message.edit_text(
-                    f"\u274c CSV \u7b2c {index} \u884c\u6570\u636e\u4e0d\u6b63\u786e\u3002\n"
-                    "\u9700\u8981\uff1aname, code, category, price, stock\u3002"
+                    f"\u274c CSV \u7b2c {index} \u884c\u6570\u636e\u4e0d\u6b63\u786e\u3002\n\u9700\u8981\uff1aname, code, category, price, stock\u3002"
                 )
                 return
-
             if code in seen_codes:
-                await status_message.edit_text(
-                    f"\u274c CSV \u4e2d\u5b58\u5728\u91cd\u590d\u7f16\u53f7\uff1a{code}"
-                )
+                await status_message.edit_text(f"\u274c CSV \u4e2d\u5b58\u5728\u91cd\u590d\u7f16\u53f7\uff1a{code}")
                 return
-
             seen_codes.add(code)
-            parsed.append(
-                {
-                    "name": name,
-                    "code": code,
-                    "category": category,
-                    "price": price,
-                    "stock": stock,
-                    "description": description,
-                }
-            )
+            parsed.append({"name": name, "code": code, "category": category, "price": price, "stock": stock, "description": description})
 
-        image_paths = []
-        allowed = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-        for path in extract_dir.rglob("*"):
-            if path.is_file() and path.suffix.lower() in allowed:
-                image_paths.append(path)
+        by_code = {row["code"]: row for row in parsed}
+        missing_codes = [f"P{i:03d}" for i in range(1, 94) if f"P{i:03d}" not in by_code]
+        if missing_codes:
+            await status_message.edit_text(
+                "\u274c CSV \u7f16\u53f7\u5fc5\u987b\u5305\u542b P001 \u5230 P093\u3002\n\u7f3a\u5c11\uff1a" + ", ".join(missing_codes[:30])
+            )
+            return
 
         image_by_number = {}
-        for path in image_paths:
-            stem = path.stem.strip()
-            if re.fullmatch(r"\d{1,3}", stem):
-                number = int(stem)
+        for path in extract_dir.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+                continue
+            if re.fullmatch(r"\d{1,3}", path.stem.strip()):
+                number = int(path.stem.strip())
                 if 1 <= number <= 93:
                     image_by_number[number] = path
 
-        missing = [str(i).zfill(2) for i in range(1, 94) if i not in image_by_number]
-        if missing:
+        missing_images = [f"{i:02d}" for i in range(1, 94) if i not in image_by_number]
+        if missing_images:
             await status_message.edit_text(
-                "\u274c ZIP \u56fe\u7247\u4e0d\u5b8c\u6574\uff0c\u7f3a\u5c11\uff1a"
-                + ", ".join(missing[:30])
-                + ("\u7b49" if len(missing) > 30 else "")
-                + "\n\u5fc5\u987b\u6709 01 \u5230 93 \u5171 93 \u5f20\u56fe\u7247\u3002\n"
-                "\u672c\u6b21\u5c1a\u672a\u5bfc\u5165\u3002"
+                "\u274c ZIP \u56fe\u7247\u4e0d\u5b8c\u6574\uff0c\u7f3a\u5c11\uff1a" + ", ".join(missing_images[:30]) +
+                (" \u7b49" if len(missing_images) > 30 else "") +
+                "\n\u5fc5\u987b\u6709 01 \u5230 93 \u5171 93 \u5f20\u56fe\u7247\u3002\n\u672c\u6b21\u672a\u5bfc\u5165\u3002"
             )
             return
 
-        # The requested mapping is 01 -> P001 ... 93 -> P093.
-        by_code = {str(row["code"]).strip().upper(): row for row in parsed}
-        missing_codes = []
-        for i in range(1, 94):
-            code = f"P{i:03d}"
-            if code not in by_code:
-                missing_codes.append(code)
-
-        if missing_codes:
+        existing = product_count()
+        if existing > 0:
             await status_message.edit_text(
-                "\u274c CSV \u7f16\u53f7\u5fc5\u987b\u5305\u542b P001 \u5230 P093\u3002\n"
-                "\u7f3a\u5c11\uff1a" + ", ".join(missing_codes[:30])
-            )
-            return
-
-        if product_count() > 0:
-            await status_message.edit_text(
-                f"\u26a0\ufe0f \u6570\u636e\u5e93\u5f53\u524d\u5df2\u6709 {product_count()} \u4e2a\u5546\u54c1\u3002\n"
+                f"\u26a0\ufe0f \u6570\u636e\u5e93\u5f53\u524d\u5df2\u6709 {existing} \u4e2a\u5546\u54c1\u3002\n"
                 "\u4e3a\u9632\u6b62\u91cd\u590d\u5bfc\u5165\uff0c\u672c\u6b21\u6ca1\u6709\u5bfc\u5165\u3002\n"
                 "\u5982\u9700\u91cd\u65b0\u5bfc\u5165\uff0c\u8bf7\u5148\u5904\u7406\u73b0\u6709\u5546\u54c1\u6570\u636e\u3002"
             )
             return
 
-        await status_message.edit_text(
-            "\u2705 \u68c0\u67e5\u901a\u8fc7\uff0c\u5f00\u59cb\u5bfc\u5165 93 \u4e2a\u5546\u54c1\u548c\u56fe\u7247..."
-        )
+        await status_message.edit_text("\u2705 \u68c0\u67e5\u901a\u8fc7\uff0c\u5f00\u59cb\u5bfc\u5165 93 \u4e2a\u5546\u54c1\u548c\u56fe\u7247...")
 
         imported = 0
         matched = 0
         failed = []
+        created_ids = []
 
-        # Import products first, then upload each numbered image to Telegram
-        # and store the returned Telegram file_id.
         for i in range(1, 94):
             code = f"P{i:03d}"
             row = by_code[code]
             product_id = insert_product(
-                name=row["name"],
-                code=row["code"],
-                category=row["category"],
-                price=row["price"],
-                stock=row["stock"],
-                description=row["description"],
-                active=1,
+                name=row["name"], code=row["code"], category=row["category"],
+                price=row["price"], stock=row["stock"],
+                description=row["description"], active=1,
             )
+            created_ids.append(product_id)
             imported += 1
 
             try:
                 with open(image_by_number[i], "rb") as photo_file:
-                    message = await context.bot.send_photo(
+                    sent = await context.bot.send_photo(
                         chat_id=update.effective_chat.id,
                         photo=photo_file,
+                        caption=f"P{i:03d} {row['name']}",
                     )
-                telegram_photo = message.photo[-1]
-
+                telegram_photo = sent.photo[-1]
                 execute(
-                    "UPDATE products SET photo_id = "
-                    + placeholder()
-                    + " WHERE id = "
-                    + placeholder(),
+                    "UPDATE products SET photo_id = " + placeholder() + " WHERE id = " + placeholder(),
                     (telegram_photo.file_id, product_id),
                 )
                 matched += 1
-
             except Exception:
                 traceback.print_exc()
                 failed.append(code)
 
-            if i % 10 == 0 or i == 93:
+            if i % 5 == 0 or i == 93:
                 try:
                     await status_message.edit_text(
-                        f"\u23f3 \u5df2\u5904\u7406 {i}/93\n"
-                        f"\u5546\u54c1\uff1a{imported}\n"
-                        f"\u56fe\u7247\uff1a{matched}"
+                        f"\u23f3 \u5df2\u5904\u7406 {i}/93\n\u5546\u54c1\uff1a{imported}\n\u56fe\u7247\uff1a{matched}"
                     )
                 except Exception:
                     pass
@@ -1492,23 +1448,16 @@ async def process_zip_import(update, context, document):
         result = (
             "\u2705 \u4e00\u952e\u4e0a\u4f20\u5b8c\u6210\n\n"
             f"\u5546\u54c1\u5bfc\u5165\uff1a{imported}/93\n"
-            f"\u56fe\u7247\u5339\u914d\uff1a{matched}/93"
+            f"\u56fe\u7247\u4fdd\u5b58\uff1a{matched}/93"
         )
-
         if failed:
-            result += (
-                "\n\n\u274c \u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff1a"
-                + ", ".join(failed[:30])
-            )
-
+            result += "\n\n\u274c \u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff1a" + ", ".join(failed[:30])
         await status_message.edit_text(result)
 
     except Exception as exc:
         traceback.print_exc()
         try:
-            await status_message.edit_text(
-                f"\u274c \u4e00\u952e\u4e0a\u4f20\u5931\u8d25\uff1a{exc}"
-            )
+            await status_message.edit_text(f"\u274c \u4e00\u952e\u4e0a\u4f20\u5931\u8d25\uff1a{exc}")
         except Exception:
             pass
     finally:
