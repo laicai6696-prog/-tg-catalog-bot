@@ -1044,6 +1044,12 @@ async def handle_photo(update, context):
         (photo_id, product_id),
     )
 
+    # å¾çä¿å­æååï¼èªå¨å é¤ç®¡çåååéçå¾çæ¶æ¯
+    try:
+        await update.message.delete()
+    except Exception as exc:
+        print(f"[PHOTO] å é¤ä¸ä¼ å¾çæ¶æ¯å¤±è´¥: {exc}")
+
     context.user_data.clear()
 
     await update.message.reply_text(
