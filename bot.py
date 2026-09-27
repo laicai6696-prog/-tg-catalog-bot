@@ -1496,35 +1496,53 @@ def main():
 
     start_web_server()
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    async def telegram_startup(app):
+        """Clean any old webhook and verify Telegram connectivity before polling."""
+        print("[TG] Startup check: connecting to Telegram...")
+        try:
+            # Polling and webhook are mutually exclusive. Remove any old webhook first.
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            print("[TG] Old webhook removed successfully.")
 
+            me = await app.bot.get_me()
+            print(f"[TG] Connected OK: @{me.username} (id={me.id})")
+
+            info = await app.bot.get_webhook_info()
+            webhook_url = getattr(info, "url", "") or ""
+            pending = getattr(info, "pending_update_count", 0)
+            if webhook_url:
+                print(f"[TG] WARNING: webhook is still set: {webhook_url}")
+            else:
+                print(f"[TG] Polling ready. pending_updates={pending}")
+
+        except Exception as exc:
+            print("[TG] STARTUP ERROR:")
+            print(f"[TG] {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            raise
+
+    async def telegram_shutdown(app):
+        print("[TG] Telegram application shutting down.")
+
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(telegram_startup)
+        .post_shutdown(telegram_shutdown)
+        .build()
+    )
+
+    # The handlers must be registered before polling starts.
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("admin", admin_command))
 
-    application.add_handler(
-        CallbackQueryHandler(button_handler)
-    )
+    application.add_handler(CallbackQueryHandler(button_handler))
 
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(
-        MessageHandler(
-            filters.PHOTO,
-            handle_photo,
-        )
-    )
-
-    application.add_handler(
-        MessageHandler(
-            filters.Document.ALL,
-            handle_document,
-        )
-    )
-
-    application.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle_text,
-        )
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
     )
 
     application.add_error_handler(error_handler)
@@ -1533,11 +1551,19 @@ def main():
     print(f"Web URL: {WEB_URL}")
     print(f"Port: {PORT}")
     print(f"Admins: {ADMINS}")
+    print("[TG] Mode: polling")
 
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-    )
+    try:
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=False,
+        )
+    except Exception as exc:
+        print("[TG] POLLING STOPPED WITH ERROR:")
+        print(f"[TG] {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
