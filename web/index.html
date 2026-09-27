@@ -1,1834 +1,1407 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="format-detection" content="telephone=no">
-<title>商品目录</title>
-
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-<style>
-*{
-  box-sizing:border-box;
-}
-
-html,
-body{
-  margin:0;
-  padding:0;
-  width:100%;
-  min-height:100%;
-}
-
-body{
-  background:#f5f6f8;
-  color:#1f2937;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    "PingFang SC",
-    "Hiragino Sans GB",
-    "Microsoft YaHei",
-    sans-serif;
-}
-
-button,
-input,
-textarea{
-  font-family:inherit;
-}
-
-button{
-  cursor:pointer;
-}
-
-.app{
-  width:100%;
-  max-width:900px;
-  margin:0 auto;
-  padding-bottom:60px;
-}
-
-/* 顶部 */
-.top{
-  position:sticky;
-  top:0;
-  z-index:20;
-  background:rgba(255,255,255,.97);
-  backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
-  padding:
-    calc(14px + env(safe-area-inset-top))
-    14px
-    10px;
-  border-bottom:1px solid #e5e7eb;
-}
-
-.title-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  margin-bottom:12px;
-}
-
-.title{
-  font-size:22px;
-  font-weight:800;
-  line-height:1.2;
-}
-
-.subtitle{
-  margin-top:4px;
-  font-size:12px;
-  color:#8a8f98;
-}
-
-.search-wrap{
-  position:relative;
-}
-
-.search{
-  width:100%;
-  height:44px;
-  border:1px solid #ddd;
-  border-radius:12px;
-  padding:0 42px 0 14px;
-  background:#f9fafb;
-  color:#111827;
-  font-size:15px;
-  outline:none;
-}
-
-.search:focus{
-  background:#fff;
-  border-color:#9ca3af;
-}
-
-.search-clear{
-  position:absolute;
-  right:8px;
-  top:6px;
-  width:32px;
-  height:32px;
-  border:0;
-  border-radius:50%;
-  background:#e5e7eb;
-  color:#555;
-  display:none;
-}
-
-.search-clear.show{
-  display:block;
-}
-
-/* 分类 */
-.cats{
-  display:flex;
-  gap:8px;
-  overflow-x:auto;
-  padding:10px 0 2px;
-  scrollbar-width:none;
-  -webkit-overflow-scrolling:touch;
-}
-
-.cats::-webkit-scrollbar{
-  display:none;
-}
-
-.cat{
-  flex:0 0 auto;
-  border:1px solid #ddd;
-  background:#fff;
-  color:#333;
-  border-radius:20px;
-  padding:7px 13px;
-  font-size:13px;
-  white-space:nowrap;
-}
-
-.cat.active{
-  background:#111827;
-  color:#fff;
-  border-color:#111827;
-}
-
-/* 工具栏 */
-.bar{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:10px;
-  padding:14px;
-}
-
-.count{
-  font-size:13px;
-  color:#6b7280;
-}
-
-.bar-right{
-  display:flex;
-  gap:8px;
-}
-
-.refresh{
-  border:0;
-  background:#fff;
-  color:#333;
-  border-radius:10px;
-  padding:8px 12px;
-  box-shadow:0 1px 3px rgba(0,0,0,.05);
-}
-
-/* 商品网格 */
-.grid{
-  display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:12px;
-  padding:0 12px;
-}
-
-.card{
-  background:#fff;
-  border-radius:15px;
-  overflow:hidden;
-  box-shadow:0 1px 5px rgba(0,0,0,.07);
-  min-width:0;
-}
-
-.image-box{
-  width:100%;
-  aspect-ratio:1/1;
-  background:#f0f1f3;
-  position:relative;
-  overflow:hidden;
-}
-
-.pic{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  display:block;
-}
-
-.nop{
-  width:100%;
-  height:100%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:#aaa;
-  font-size:13px;
-}
-
-.body{
-  padding:11px;
-}
-
-.name{
-  font-size:15px;
-  font-weight:700;
-  line-height:1.4;
-  min-height:42px;
-  word-break:break-word;
-}
-
-.code{
-  font-size:12px;
-  color:#8a8f98;
-  margin-top:3px;
-}
-
-.price{
-  font-size:17px;
-  font-weight:800;
-  margin-top:8px;
-  color:#111827;
-}
-
-.price.negotiable{
-  font-size:15px;
-}
-
-.stock{
-  font-size:12px;
-  margin-top:5px;
-  color:#16a34a;
-}
-
-.stock.out{
-  color:#dc2626;
-}
-
-.stock.unknown{
-  color:#8a8f98;
-}
-
-.desc{
-  font-size:12px;
-  color:#6b7280;
-  margin-top:6px;
-  line-height:1.5;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
-  min-height:36px;
-}
-
-.btn{
-  width:100%;
-  margin-top:10px;
-  height:38px;
-  border:0;
-  border-radius:10px;
-  background:#111827;
-  color:white;
-  font-size:14px;
-  font-weight:700;
-}
-
-.btn:disabled{
-  opacity:.55;
-}
-
-/* 加载/空状态 */
-.loading,
-.empty{
-  grid-column:1/-1;
-  text-align:center;
-  padding:60px 20px;
-  color:#888;
-}
-
-.loading{
-  padding-top:80px;
-}
-
-/* 商品详情 */
-.detail-mask{
-  display:none;
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.5);
-  z-index:30;
-  padding:20px;
-  overflow-y:auto;
-}
-
-.detail-mask.show{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-
-.detail-modal{
-  background:#fff;
-  border-radius:20px;
-  width:100%;
-  max-width:600px;
-  max-height:90vh;
-  overflow:auto;
-}
-
-.detail-image{
-  width:100%;
-  aspect-ratio:1/1;
-  object-fit:cover;
-  display:block;
-  background:#f0f1f3;
-}
-
-.detail-content{
-  padding:18px;
-}
-
-.detail-title{
-  font-size:21px;
-  font-weight:800;
-  line-height:1.35;
-}
-
-.detail-code{
-  font-size:13px;
-  color:#888;
-  margin-top:5px;
-}
-
-.detail-price{
-  font-size:21px;
-  font-weight:800;
-  margin-top:12px;
-}
-
-.detail-stock{
-  font-size:14px;
-  margin-top:6px;
-}
-
-.detail-desc{
-  font-size:14px;
-  line-height:1.7;
-  color:#555;
-  margin-top:14px;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-
-.detail-actions{
-  display:flex;
-  gap:10px;
-  margin-top:18px;
-}
-
-.detail-actions button{
-  flex:1;
-  height:44px;
-  border:0;
-  border-radius:11px;
-  font-size:14px;
-  font-weight:700;
-}
-
-.detail-close{
-  background:#eee;
-  color:#333;
-}
-
-.detail-inquiry{
-  background:#111827;
-  color:#fff;
-}
-
-/* 询价 */
-.mask{
-  display:none;
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.45);
-  z-index:40;
-  padding:20px;
-  align-items:flex-end;
-  overflow-y:auto;
-}
-
-.mask.show{
-  display:flex;
-}
-
-.modal{
-  background:#fff;
-  border-radius:20px 20px 14px 14px;
-  width:100%;
-  max-width:760px;
-  margin:auto;
-  padding:18px;
-}
-
-.modal h2{
-  margin:0 0 8px;
-  font-size:19px;
-}
-
-.info{
-  font-size:13px;
-  color:#666;
-  line-height:1.7;
-}
-
-.textarea{
-  width:100%;
-  min-height:110px;
-  border:1px solid #ddd;
-  border-radius:12px;
-  padding:12px;
-  font-size:14px;
-  resize:vertical;
-  margin-top:12px;
-  outline:none;
-}
-
-.textarea:focus{
-  border-color:#9ca3af;
-}
-
-.actions{
-  display:flex;
-  gap:10px;
-  margin-top:12px;
-}
-
-.actions button{
-  flex:1;
-  height:44px;
-  border:0;
-  border-radius:11px;
-  font-size:14px;
-  font-weight:700;
-}
-
-.cancel{
-  background:#eee;
-  color:#333;
-}
-
-.submit{
-  background:#111827;
-  color:#fff;
-}
-
-.submit:disabled{
-  opacity:.55;
-}
-
-/* 提示 */
-.toast{
-  position:fixed;
-  left:50%;
-  bottom:calc(28px + env(safe-area-inset-bottom));
-  transform:translateX(-50%);
-  background:#111827;
-  color:#fff;
-  padding:10px 15px;
-  border-radius:10px;
-  font-size:13px;
-  display:none;
-  z-index:100;
-  max-width:90%;
-  text-align:center;
-}
-
-.toast.show{
-  display:block;
-}
-
-/* 桌面 */
-@media(min-width:700px){
-  .grid{
-    grid-template-columns:repeat(3,minmax(0,1fr));
-  }
-
-  .detail-modal{
-    max-height:85vh;
-  }
-}
-
-/* 小屏 */
-@media(max-width:420px){
-  .grid{
-    gap:9px;
-    padding:0 9px;
-  }
-
-  .body{
-    padding:9px;
-  }
-
-  .name{
-    font-size:14px;
-  }
-
-  .price{
-    font-size:16px;
-  }
-
-  .btn{
-    height:37px;
-    font-size:13px;
-  }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+  >
+  <meta name="theme-color" content="#f5f6f8">
+  <title>商品目录</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: #f5f6f8;
+      color: #222;
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "PingFang SC",
+        "Microsoft YaHei",
+        sans-serif;
+    }
+    body {
+      padding-bottom: 30px;
+    }
+    button,
+    input {
+      font: inherit;
+    }
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+    .app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 14px;
+    }
+    /* 顶部 */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: 10px 0 12px;
+      background: rgba(245, 246, 248, 0.96);
+      backdrop-filter: blur(12px);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .title {
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .refresh-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: #fff;
+      color: #333;
+      font-size: 20px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    }
+    .refresh-btn:active {
+      transform: scale(0.94);
+    }
+    /* 搜索 */
+    .search-box {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .search-box input {
+      width: 100%;
+      height: 46px;
+      padding: 0 16px 0 43px;
+      border: 1px solid #e4e6eb;
+      border-radius: 14px;
+      outline: none;
+      background: #fff;
+      color: #222;
+      font-size: 15px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+    }
+    .search-box input:focus {
+      border-color: #aaa;
+    }
+    .search-icon {
+      position: absolute;
+      left: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px;
+      color: #888;
+      pointer-events: none;
+    }
+    /* 分类 */
+    .categories {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 8px;
+      scrollbar-width: none;
+    }
+    .categories::-webkit-scrollbar {
+      display: none;
+    }
+    .category-btn {
+      flex: 0 0 auto;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: #fff;
+      color: #555;
+      font-size: 13px;
+      white-space: nowrap;
+      border: 1px solid #e5e5e5;
+    }
+    .category-btn.active {
+      background: #222;
+      color: #fff;
+      border-color: #222;
+    }
+    /* 状态 */
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 8px 2px 12px;
+      color: #888;
+      font-size: 12px;
+    }
+    /* 商品 */
+    .products {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 11px;
+    }
+    .card {
+      overflow: hidden;
+      background: #fff;
+      border-radius: 15px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+      border: 1px solid rgba(0, 0, 0, 0.04);
+    }
+    .card:active {
+      transform: scale(0.985);
+    }
+    .photo-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: #f1f2f4;
+      overflow: hidden;
+    }
+    .photo {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      background: #f1f2f4;
+    }
+    .no-photo {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 35px;
+    }
+    .stock-badge {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      padding: 4px 7px;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #333;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .stock-badge.out {
+      color: #d33;
+    }
+    .card-body {
+      padding: 10px;
+    }
+    .product-name {
+      min-height: 40px;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 700;
+      color: #222;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    .product-code {
+      margin-top: 4px;
+      color: #999;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .product-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 7px;
+      margin-top: 9px;
+    }
+    .price {
+      min-width: 0;
+      color: #222;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .inquiry-btn {
+      flex: 0 0 auto;
+      min-width: 58px;
+      padding: 7px 9px;
+      border-radius: 9px;
+      background: #222;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .inquiry-btn:active {
+      opacity: 0.75;
+    }
+    .detail-btn {
+      width: 100%;
+      margin-top: 8px;
+      padding: 7px;
+      border-radius: 9px;
+      background: #f2f3f5;
+      color: #555;
+      font-size: 12px;
+    }
+    /* 空状态 */
+    .empty {
+      padding: 70px 20px;
+      text-align: center;
+      color: #999;
+      font-size: 14px;
+    }
+    .empty-icon {
+      margin-bottom: 10px;
+      font-size: 38px;
+    }
+    /* 加载 */
+    .loading {
+      padding: 70px 20px;
+      text-align: center;
+      color: #999;
+      font-size: 14px;
+    }
+    .loading-dot {
+      display: inline-block;
+      margin-right: 6px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%,
+      100% {
+        opacity: 0.3;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+    /* 遮罩 */
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.48);
+    }
+    .modal-mask.show {
+      display: flex;
+    }
+    .modal {
+      width: 100%;
+      max-width: 620px;
+      max-height: 90vh;
+      overflow-y: auto;
+      border-radius: 20px 20px 0 0;
+      background: #fff;
+      animation: slideUp 0.18s ease-out;
+    }
+    @keyframes slideUp {
+      from {
+        transform: translateY(30px);
+        opacity: 0.7;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    .modal-photo {
+      width: 100%;
+      max-height: 55vh;
+      object-fit: contain;
+      display: block;
+      background: #f3f3f3;
+    }
+    .modal-content {
+      padding: 18px;
+    }
+    .modal-title {
+      font-size: 21px;
+      line-height: 29px;
+      font-weight: 800;
+    }
+    .modal-code {
+      margin-top: 5px;
+      color: #999;
+      font-size: 12px;
+    }
+    .info-list {
+      margin-top: 16px;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #f7f7f8;
+    }
+    .info-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 15px;
+      padding: 11px 13px;
+      border-bottom: 1px solid #e9e9eb;
+      font-size: 13px;
+    }
+    .info-row:last-child {
+      border-bottom: 0;
+    }
+    .info-label {
+      flex: 0 0 auto;
+      color: #999;
+    }
+    .info-value {
+      text-align: right;
+      color: #333;
+      word-break: break-word;
+    }
+    .description {
+      margin-top: 14px;
+      padding: 13px;
+      border-radius: 12px;
+      background: #f7f7f8;
+      color: #555;
+      font-size: 13px;
+      line-height: 21px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .modal-action {
+      flex: 1;
+      min-height: 46px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .close-btn {
+      background: #f0f1f3;
+      color: #444;
+    }
+    .service-btn {
+      background: #222;
+      color: #fff;
+    }
+    /* 提示 */
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 25px;
+      z-index: 300;
+      max-width: calc(100% - 40px);
+      padding: 10px 15px;
+      border-radius: 10px;
+      background: rgba(30, 30, 30, 0.92);
+      color: #fff;
+      font-size: 13px;
+      line-height: 19px;
+      text-align: center;
+      transform: translate(-50%, 20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.2s;
+    }
+    .toast.show {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+    @media (min-width: 700px) {
+      .app {
+        padding: 20px;
+      }
+      .products {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 15px;
+      }
+      .modal-mask {
+        align-items: center;
+      }
+      .modal {
+        border-radius: 20px;
+        max-height: 88vh;
+      }
+    }
+    @media (min-width: 1000px) {
+      .products {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+  </style>
 </head>
-
 <body>
-
-<div class="app">
-
-  <!-- 顶部 -->
-  <header class="top">
-
-    <div class="title-row">
-      <div>
-        <div class="title">🛍️ 商品目录</div>
-        <div class="subtitle">选择商品 · 查看详情 · 在线询价</div>
+  <div class="app">
+    <div class="topbar">
+      <div class="header">
+        <div class="title">商品目录</div>
+        <button
+          id="refreshBtn"
+          class="refresh-btn"
+          type="button"
+          aria-label="刷新"
+        >
+          ↻
+        </button>
+      </div>
+      <div class="search-box">
+        <span class="search-icon">⌕</span>
+        <input
+          id="searchInput"
+          type="search"
+          placeholder="搜索商品名称或编号"
+          autocomplete="off"
+        >
+      </div>
+      <div id="categories" class="categories">
+        <button
+          class="category-btn active"
+          type="button"
+          data-category=""
+        >
+          全部
+        </button>
       </div>
     </div>
-
-    <!-- 搜索 -->
-    <div class="search-wrap">
-      <input
-        id="search"
-        class="search"
-        placeholder="搜索商品名称、编号…"
-        autocomplete="off"
-        enterkeyhint="search"
+    <div class="status">
+      <span id="statusText">正在加载商品...</span>
+      <span id="updateText"></span>
+    </div>
+    <main id="products" class="products">
+      <div class="loading">
+        <span class="loading-dot">●</span>
+        正在加载商品...
+      </div>
+    </main>
+  </div>
+  <!-- 商品详情 -->
+  <div id="detailMask" class="modal-mask">
+    <div class="modal">
+      <img
+        id="detailPhoto"
+        class="modal-photo"
+        src=""
+        alt="商品图片"
+        style="display:none;"
       >
-      <button
-        id="searchClear"
-        class="search-clear"
-        type="button"
-        onclick="clearSearch()"
-      >×</button>
-    </div>
-
-    <!-- 分类 -->
-    <div id="cats" class="cats"></div>
-
-  </header>
-
-  <!-- 工具栏 -->
-  <div class="bar">
-    <span id="count" class="count">正在加载…</span>
-
-    <div class="bar-right">
-      <button
-        class="refresh"
-        type="button"
-        onclick="loadProducts()"
-      >刷新</button>
-    </div>
-  </div>
-
-  <!-- 商品 -->
-  <main id="grid" class="grid">
-    <div class="loading">商品加载中…</div>
-  </main>
-
-</div>
-
-
-<!-- 商品详情弹窗 -->
-<div id="detailMask" class="detail-mask">
-
-  <div class="detail-modal">
-
-    <div id="detailImageBox"></div>
-
-    <div class="detail-content">
-
-      <div id="detailTitle" class="detail-title"></div>
-
-      <div id="detailCode" class="detail-code"></div>
-
-      <div id="detailPrice" class="detail-price"></div>
-
-      <div id="detailStock" class="detail-stock"></div>
-
-      <div id="detailDesc" class="detail-desc"></div>
-
-      <div class="detail-actions">
-
-        <button
-          class="detail-close"
-          type="button"
-          onclick="closeDetail()"
-        >关闭</button>
-
-        <button
-          class="detail-inquiry"
-          type="button"
-          onclick="inquiryFromDetail()"
-        >💬 立即询价</button>
-
+      <div class="modal-content">
+        <div id="detailTitle" class="modal-title"></div>
+        <div id="detailCode" class="modal-code"></div>
+        <div class="info-list">
+          <div class="info-row">
+            <span class="info-label">分类</span>
+            <span id="detailCategory" class="info-value">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">价格</span>
+            <span id="detailPrice" class="info-value">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">库存</span>
+            <span id="detailStock" class="info-value">-</span>
+          </div>
+        </div>
+        <div
+          id="detailDescription"
+          class="description"
+          style="display:none;"
+        ></div>
+        <div class="modal-actions">
+          <button
+            id="detailCloseBtn"
+            class="modal-action close-btn"
+            type="button"
+          >
+            关闭
+          </button>
+          <button
+            id="detailInquiryBtn"
+            class="modal-action service-btn"
+            type="button"
+          >
+            立即询价
+          </button>
+        </div>
       </div>
-
     </div>
-
   </div>
-
-</div>
-
-
-<!-- 询价弹窗 -->
-<div id="mask" class="mask">
-
-  <div class="modal">
-
-    <h2 id="modalTitle">商品询价</h2>
-
-    <div id="modalInfo" class="info"></div>
-
-    <textarea
-      id="message"
-      class="textarea"
-      placeholder="请输入询价内容，例如：需要多少、希望了解什么…"
-    ></textarea>
-
-    <div class="actions">
-
-      <button
-        class="cancel"
-        type="button"
-        onclick="closeModal()"
-      >取消</button>
-
-      <button
-        class="submit"
-        type="button"
-        onclick="submitInquiry()"
-      >提交询价</button>
-
-    </div>
-
-  </div>
-
-</div>
-
-
-<!-- 提示 -->
-<div id="toast" class="toast"></div>
-
-
-<script>
-/* =========================================================
-   Telegram Mini App
-========================================================= */
-
-const tg =
-  window.Telegram &&
-  window.Telegram.WebApp
-    ? window.Telegram.WebApp
-    : null;
-
-if(tg){
-
-  try{
-    tg.ready();
-    tg.expand();
-  }catch(e){
-    console.log(e);
-  }
-
-}
-
-
-/* =========================================================
-   全局状态
-========================================================= */
-
-const state = {
-
-  products: [],
-
-  categories: [],
-
-  category: '',
-
-  keyword: '',
-
-  selected: null,
-
-  detailProduct: null
-
-};
-
-
-/* =========================================================
-   工具函数
-========================================================= */
-
-function esc(value){
-
-  return String(value ?? '')
-    .replace(/[&<>"']/g,function(m){
-
-      return {
-
-        '&':'&amp;',
-        '<':'&lt;',
-        '>':'&gt;',
-        '"':'&quot;',
-        "'":'&#39;'
-
-      }[m];
-
-    });
-
-}
-
-
-function showToast(text){
-
-  const box = document.getElementById('toast');
-
-  box.textContent = text;
-
-  box.classList.add('show');
-
-  clearTimeout(window.__toastTimer);
-
-  window.__toastTimer = setTimeout(function(){
-
-    box.classList.remove('show');
-
-  },2500);
-
-}
-
-
-function money(value){
-
-  if(
-    value === null ||
-    value === undefined ||
-    value === ''
-  ){
-
-    return '<span class="negotiable">价格面议</span>';
-
-  }
-
-  return '¥ ' + esc(value);
-
-}
-
-
-function getStockNumber(value){
-
-  const n = Number(value);
-
-  if(Number.isFinite(n)){
-
-    return n;
-
-  }
-
-  return null;
-
-}
-
-
-function stockText(value){
-
-  const n = getStockNumber(value);
-
-  if(n === null){
-
-    return '库存：' + esc(value ?? '未知');
-
-  }
-
-  if(n <= 0){
-
-    return '暂时缺货';
-
-  }
-
-  return '库存：' + esc(value);
-
-}
-
-
-function stockClass(value){
-
-  const n = getStockNumber(value);
-
-  if(n === null){
-
-    return 'stock unknown';
-
-  }
-
-  if(n <= 0){
-
-    return 'stock out';
-
-  }
-
-  return 'stock';
-
-}
-
-
-/* =========================================================
-   分类
-========================================================= */
-
-function renderCats(){
-
-  const el = document.getElementById('cats');
-
-  let html = '';
-
-  html +=
-    '<button class="cat ' +
-    (!state.category ? 'active' : '') +
-    '" type="button" onclick="selectCat(\'\')">' +
-    '全部' +
-    '</button>';
-
-  state.categories.forEach(function(c){
-
-    const id = c.id ?? '';
-
-    const name = c.name ?? id;
-
-    const count =
-      Number(c.count) > 0
-        ? ' (' + Number(c.count) + ')'
-        : '';
-
-    html +=
-      '<button class="cat ' +
-      (state.category === id ? 'active' : '') +
-      '" type="button" ' +
-      'onclick="selectCat(\'' +
-      esc(id).replace(/'/g,"\\'") +
-      '\')">' +
-      esc(name) +
-      esc(count) +
-      '</button>';
-
-  });
-
-  el.innerHTML = html;
-
-}
-
-
-function selectCat(category){
-
-  state.category = category;
-
-  renderCats();
-
-  loadProducts();
-
-}
-
-
-/* =========================================================
-   搜索
-========================================================= */
-
-function updateSearchClear(){
-
-  const input =
-    document.getElementById('search');
-
-  const clear =
-    document.getElementById('searchClear');
-
-  if(input.value.trim()){
-
-    clear.classList.add('show');
-
-  }else{
-
-    clear.classList.remove('show');
-
-  }
-
-}
-
-
-function clearSearch(){
-
-  const input =
-    document.getElementById('search');
-
-  input.value = '';
-
-  state.keyword = '';
-
-  updateSearchClear();
-
-  loadProducts();
-
-}
-
-
-/* =========================================================
-   商品渲染
-========================================================= */
-
-function render(){
-
-  const grid =
-    document.getElementById('grid');
-
-  document.getElementById('count').textContent =
-    '共 ' + state.products.length + ' 个商品';
-
-
-  if(!state.products.length){
-
-    grid.innerHTML =
-      '<div class="empty">' +
-      '没有找到匹配商品' +
-      '</div>';
-
-    return;
-
-  }
-
-
-  grid.innerHTML =
-    state.products.map(function(p){
-
-      const stock =
-        getStockNumber(p.stock);
-
-      const out =
-        stock !== null && stock <= 0;
-
-
-      const photo =
-        p.photo_url ||
-        p.image_url ||
-        '';
-
-
-      let imageHTML = '';
-
-      if(photo){
-
-        imageHTML =
-          '<img ' +
-          'class="pic" ' +
-          'loading="lazy" ' +
-          'src="' + esc(photo) + '" ' +
-          'alt="' + esc(p.name) + '" ' +
-          'onerror="imageError(this)"' +
-          '>';
-
-      }else{
-
-        imageHTML =
-          '<div class="nop">暂无图片</div>';
-
-      }
-
-
-      return `
-
-        <article class="card">
-
-          <div class="image-box"
-               onclick='openDetail(${JSON.stringify(p)})'>
-
-            ${imageHTML}
-
-          </div>
-
-          <div class="body">
-
-            <div
-              class="name"
-              onclick='openDetail(${JSON.stringify(p)})'
-              style="cursor:pointer"
-            >
-              ${esc(p.name)}
-            </div>
-
-            <div class="code">
-              ${esc(p.code || '')}
-            </div>
-
-            <div class="price">
-              ${money(p.price)}
-            </div>
-
-            <div class="${stockClass(p.stock)}">
-              ${stockText(p.stock)}
-            </div>
-
-            ${
-              p.description
-              ?
-              '<div class="desc">' +
-              esc(p.description) +
-              '</div>'
-              :
-              '<div class="desc"></div>'
-            }
-
-            <button
-              class="btn"
-              type="button"
-              onclick='openInquiry(${JSON.stringify(p)})'
-            >
-              💬 询价
-            </button>
-
-          </div>
-
-        </article>
-
-      `;
-
-    }).join('');
-
-}
-
-
-function imageError(img){
-
-  const box =
-    img.parentElement;
-
-  img.remove();
-
-  box.innerHTML =
-    '<div class="nop">暂无图片</div>';
-
-}
-
-
-/* =========================================================
-   商品详情
-========================================================= */
-
-function openDetail(product){
-
-  state.detailProduct = product;
-
-  const imageBox =
-    document.getElementById('detailImageBox');
-
-  const title =
-    document.getElementById('detailTitle');
-
-  const code =
-    document.getElementById('detailCode');
-
-  const price =
-    document.getElementById('detailPrice');
-
-  const stock =
-    document.getElementById('detailStock');
-
-  const desc =
-    document.getElementById('detailDesc');
-
-
-  title.textContent =
-    product.name || '商品';
-
-
-  code.textContent =
-    '编号：' + (product.code || '');
-
-
-  price.innerHTML =
-    money(product.price);
-
-
-  stock.textContent =
-    stockText(product.stock);
-
-  stock.className =
-    stockClass(product.stock);
-
-
-  desc.textContent =
-    product.description ||
-    '暂无商品描述';
-
-
-  const photo =
-    product.photo_url ||
-    product.image_url ||
-    '';
-
-
-  if(photo){
-
-    imageBox.innerHTML =
-      '<img class="detail-image" ' +
-      'src="' + esc(photo) + '" ' +
-      'alt="' + esc(product.name) + '" ' +
-      'onerror="this.parentElement.innerHTML=\'<div class=&quot;nop&quot; style=&quot;height:100%;min-height:300px&quot;>暂无图片</div>\'">';
-
-  }else{
-
-    imageBox.innerHTML =
-      '<div class="detail-image nop" ' +
-      'style="min-height:300px">' +
-      '暂无图片' +
-      '</div>';
-
-  }
-
-
-  document
-    .getElementById('detailMask')
-    .classList.add('show');
-
-}
-
-
-function closeDetail(){
-
-  document
-    .getElementById('detailMask')
-    .classList.remove('show');
-
-  state.detailProduct = null;
-
-}
-
-
-function inquiryFromDetail(){
-
-  if(!state.detailProduct){
-
-    return;
-
-  }
-
-  const product =
-    state.detailProduct;
-
-  closeDetail();
-
-  openInquiry(product);
-
-}
-
-
-/* =========================================================
-   询价
-========================================================= */
-
-function openInquiry(product){
-
-  state.selected = product;
-
-
-  document.getElementById('modalTitle')
-    .textContent =
-      '商品询价';
-
-
-  document.getElementById('modalInfo')
-    .innerHTML =
-
-      '<b>' +
-      esc(product.name) +
-      '</b>' +
-
-      '<br>编号：' +
-      esc(product.code || '') +
-
-      '<br>价格：' +
-      money(product.price) +
-
-      '　' +
-
-      stockText(product.stock);
-
-
-  document.getElementById('message')
-    .value = '';
-
-
-  document
-    .getElementById('mask')
-    .classList.add('show');
-
-
-  setTimeout(function(){
-
-    document
-      .getElementById('message')
-      .focus();
-
-  },80);
-
-}
-
-
-function closeModal(){
-
-  document
-    .getElementById('mask')
-    .classList.remove('show');
-
-  state.selected = null;
-
-}
-
-
-/* =========================================================
-   获取 Telegram 用户
-========================================================= */
-
-function getTelegramUser(){
-
-  let user_id = null;
-
-  let username = '';
-
-  let first_name = '';
-
-  let last_name = '';
-
-
-  try{
-
-    if(
-      tg &&
-      tg.initDataUnsafe &&
-      tg.initDataUnsafe.user
-    ){
-
-      const user =
-        tg.initDataUnsafe.user;
-
-      user_id =
-        user.id || null;
-
-      username =
-        user.username || '';
-
-      first_name =
-        user.first_name || '';
-
-      last_name =
-        user.last_name || '';
-
-    }
-
-  }catch(e){
-
-    console.log(e);
-
-  }
-
-
-  return {
-
-    user_id,
-
-    username,
-
-    first_name,
-
-    last_name
-
-  };
-
-}
-
-
-/* =========================================================
-   提交询价
-========================================================= */
-
-async function submitInquiry(){
-
-  if(!state.selected){
-
-    return;
-
-  }
-
-
-  const btn =
-    document.querySelector('.submit');
-
-
-  const message =
-    document
-      .getElementById('message')
-      .value
-      .trim();
-
-
-  btn.disabled = true;
-
-  btn.textContent =
-    '提交中…';
-
-
-  const user =
-    getTelegramUser();
-
-
-  const product =
-    state.selected;
-
-
-  try{
-
-    const response =
-      await fetch(
-        '/api/inquiry',
-        {
-          method:'POST',
-
-          headers:{
-            'Content-Type':
-              'application/json'
-          },
-
-          body:JSON.stringify({
-
-            product:
-              product.name +
-              ' [' +
-              (product.code || '') +
-              ']',
-
-            product_id:
-              product.id || null,
-
-            code:
-              product.code || '',
-
-            message,
-
-            user_id:
-              user.user_id,
-
-            username:
-              user.username,
-
-            first_name:
-              user.first_name,
-
-            last_name:
-              user.last_name
-
-          })
-
-        }
-      );
-
-
-    const data =
-      await response.json();
-
-
-    if(!data.ok){
-
-      throw new Error(
-        data.error ||
-        '提交失败'
-      );
-
-    }
-
-
-    closeModal();
-
-
-    showToast(
-      '✅ 询价已提交，请等待回复'
-    );
-
-
-    if(
-      tg &&
-      tg.HapticFeedback
-    ){
-
-      try{
-
-        tg.HapticFeedback
-          .notificationOccurred(
-            'success'
-          );
-
-      }catch(e){}
-
-    }
-
-
-  }catch(error){
-
-    console.error(error);
-
-    showToast(
-      '❌ 提交失败，请稍后重试'
-    );
-
-
-  }finally{
-
-    btn.disabled = false;
-
-    btn.textContent =
-      '提交询价';
-
-  }
-
-}
-
-
-/* =========================================================
-   分类 API
-========================================================= */
-
-async function loadCategories(){
-
-  try{
-
-    const response =
-      await fetch(
-        '/api/categories',
-        {
-          cache:'no-store'
-        }
-      );
-
-
-    const data =
-      await response.json();
-
-
-    if(
-      data &&
-      data.ok &&
-      Array.isArray(
-        data.categories
-      )
-    ){
-
-      state.categories =
-        data.categories;
-
-      renderCats();
-
-    }else{
-
-      state.categories = [];
-
-      renderCats();
-
-    }
-
-
-  }catch(error){
-
-    console.error(
-      '分类加载失败:',
-      error
-    );
-
-    state.categories = [];
-
-    renderCats();
-
-  }
-
-}
-
-
-/* =========================================================
-   商品 API
-========================================================= */
-
-async function loadProducts(){
-
-  const grid =
-    document.getElementById('grid');
-
-
-  grid.innerHTML =
-    '<div class="loading">' +
-    '商品加载中…' +
-    '</div>';
-
-
-  const params =
-    new URLSearchParams();
-
-
-  /*
-    只显示 active=1 的商品
-    与最终版 Bot 后端保持一致
-  */
-
-  params.set(
-    'active',
-    '1'
-  );
-
-
-  if(state.category){
-
-    params.set(
-      'category',
-      state.category
-    );
-
-  }
-
-
-  const search =
-    document
-      .getElementById('search')
-      .value
-      .trim();
-
-
-  state.keyword =
-    search;
-
-
-  updateSearchClear();
-
-
-  if(search){
-
-    params.set(
-      'keyword',
-      search
-    );
-
-  }
-
-
-  try{
-
-    const response =
-      await fetch(
-        '/api/products?' +
-        params.toString(),
-        {
-          cache:'no-store'
-        }
-      );
-
-
-    const data =
-      await response.json();
-
-
+  <div id="toast" class="toast"></div>
+  <script>
     /*
-      兼容两种 API：
-
-      {
-        ok:true,
-        products:[]
+     * ============================================================
+     * 人工客服 Telegram 用户名
+     * ============================================================
+     *
+     * 例如：
+     * const SERVICE_USERNAME = "kefu123456";
+     *
+     * 注意：
+     * 1. 不要写 @
+     * 2. 如果你现在是让商品机器人自己接待客户，
+     *    可以暂时填写：shangpinmulu2026_bot
+     *
+     * 如果你有真正的人工客服账号，就把这里改成
+     * 人工客服的 Telegram 用户名。
+     */
+    const SERVICE_USERNAME = "shangpinmulu2026_bot";
+    /*
+     * ============================================================
+     * Telegram Mini App
+     * ============================================================
+     */
+    const tg = window.Telegram && window.Telegram.WebApp
+      ? window.Telegram.WebApp
+      : null;
+    if (tg) {
+      try {
+        tg.ready();
+        tg.expand();
+      } catch (e) {
+        console.log("Telegram WebApp 初始化失败", e);
       }
-
-      或直接：
-
-      []
-    */
-
-    if(
-      data &&
-      data.ok === false
-    ){
-
-      throw new Error(
-        data.error ||
-        '商品加载失败'
-      );
-
     }
-
-
-    if(
-      Array.isArray(data)
-    ){
-
-      state.products =
-        data;
-
-    }else if(
-      data &&
-      Array.isArray(
-        data.products
-      )
-    ){
-
-      state.products =
-        data.products;
-
-    }else{
-
-      state.products = [];
-
+    /*
+     * ============================================================
+     * 全局状态
+     * ============================================================
+     */
+    const state = {
+      products: [],
+      categories: [],
+      category: "",
+      keyword: "",
+      selectedProduct: null,
+      loading: false
+    };
+    /*
+     * ============================================================
+     * DOM
+     * ============================================================
+     */
+    const productsEl = document.getElementById("products");
+    const categoriesEl = document.getElementById("categories");
+    const searchInput = document.getElementById("searchInput");
+    const statusText = document.getElementById("statusText");
+    const updateText = document.getElementById("updateText");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const detailMask = document.getElementById("detailMask");
+    const detailPhoto = document.getElementById("detailPhoto");
+    const detailTitle = document.getElementById("detailTitle");
+    const detailCode = document.getElementById("detailCode");
+    const detailCategory = document.getElementById("detailCategory");
+    const detailPrice = document.getElementById("detailPrice");
+    const detailStock = document.getElementById("detailStock");
+    const detailDescription = document.getElementById("detailDescription");
+    const detailCloseBtn = document.getElementById("detailCloseBtn");
+    const detailInquiryBtn = document.getElementById("detailInquiryBtn");
+    const toastEl = document.getElementById("toast");
+    /*
+     * ============================================================
+     * 工具函数
+     * ============================================================
+     */
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
     }
-
-
-    render();
-
-
-  }catch(error){
-
-    console.error(
-      '商品加载失败:',
-      error
+    function showToast(message, duration = 1800) {
+      toastEl.textContent = message;
+      toastEl.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => {
+        toastEl.classList.remove("show");
+      }, duration);
+    }
+    function getUserInfo() {
+      const user =
+        tg &&
+        tg.initDataUnsafe &&
+        tg.initDataUnsafe.user
+          ? tg.initDataUnsafe.user
+          : null;
+      return {
+        user_id: user ? String(user.id || "") : "",
+        username: user ? String(user.username || "") : "",
+        first_name: user ? String(user.first_name || "") : "",
+        last_name: user ? String(user.last_name || "") : ""
+      };
+    }
+    function getPhotoUrl(product) {
+      if (!product) {
+        return "";
+      }
+      /*
+       * 如果后端以后直接提供 photo_url / image_url，
+       * 优先使用。
+       */
+      if (product.photo_url) {
+        return String(product.photo_url);
+      }
+      if (product.image_url) {
+        return String(product.image_url);
+      }
+      /*
+       * 当前 Bot.py 的图片方式：
+       *
+       * products.photo_id
+       * +
+       * /api/photo?id=商品ID
+       */
+      if (
+        product.photo_id &&
+        product.id !== undefined &&
+        product.id !== null
+      ) {
+        return "/api/photo?id=" +
+          encodeURIComponent(String(product.id));
+      }
+      return "";
+    }
+    function getCategoryName(category) {
+      const value = String(category ?? "");
+      const map = {
+        c1: "和天下系列",
+        c2: "熊猫系列",
+        c3: "南京系列",
+        c4: "荷花系列",
+        c5: "芙蓉王系列",
+        c6: "牡丹系列",
+        c7: "黄金叶系列",
+        c8: "苏烟系列",
+        c9: "利群系列",
+        c10: "黄鹤楼系列",
+        c11: "中华系列",
+        c12: "白皮系列"
+      };
+      return map[value] || value || "未分类";
+    }
+    function formatPrice(price) {
+      if (
+        price === null ||
+        price === undefined ||
+        String(price).trim() === ""
+      ) {
+        return "面议";
+      }
+      const value = String(price).trim();
+      if (
+        value === "0" ||
+        value === "0.0" ||
+        value === "0.00"
+      ) {
+        return "面议";
+      }
+      return value;
+    }
+    function formatStock(stock) {
+      if (
+        stock === null ||
+        stock === undefined ||
+        String(stock).trim() === ""
+      ) {
+        return "库存未知";
+      }
+      const value = Number(stock);
+      if (!Number.isNaN(value)) {
+        if (value <= 0) {
+          return "暂无库存";
+        }
+        return "库存 " + value;
+      }
+      return "库存 " + String(stock);
+    }
+    function stockIsOut(stock) {
+      const value = Number(stock);
+      return !Number.isNaN(value) && value <= 0;
+    }
+    function normalizeProducts(data) {
+      if (Array.isArray(data)) {
+        return data;
+      }
+      if (data && Array.isArray(data.products)) {
+        return data.products;
+      }
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+      return [];
+    }
+    function normalizeCategories(data) {
+      if (Array.isArray(data)) {
+        return data;
+      }
+      if (data && Array.isArray(data.categories)) {
+        return data.categories;
+      }
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+      return [];
+    }
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        cache: "no-store",
+        ...options
+      });
+      if (!response.ok) {
+        throw new Error(
+          "HTTP " + response.status
+        );
+      }
+      return await response.json();
+    }
+    /*
+     * ============================================================
+     * 分类
+     * ============================================================
+     */
+    async function loadCategories() {
+      try {
+        const data = await fetchJson("/api/categories");
+        state.categories = normalizeCategories(data);
+        renderCategories();
+      } catch (error) {
+        console.log(
+          "分类接口加载失败，使用默认分类",
+          error
+        );
+        /*
+         * 后端分类接口暂时不可用时，
+         * 仍然保证前端可以使用 12 个分类。
+         */
+        state.categories = [
+          { id: "c1", name: "和天下系列" },
+          { id: "c2", name: "熊猫系列" },
+          { id: "c3", name: "南京系列" },
+          { id: "c4", name: "荷花系列" },
+          { id: "c5", name: "芙蓉王系列" },
+          { id: "c6", name: "牡丹系列" },
+          { id: "c7", name: "黄金叶系列" },
+          { id: "c8", name: "苏烟系列" },
+          { id: "c9", name: "利群系列" },
+          { id: "c10", name: "黄鹤楼系列" },
+          { id: "c11", name: "中华系列" },
+          { id: "c12", name: "白皮系列" }
+        ];
+        renderCategories();
+      }
+    }
+    function normalizeCategoryItem(item) {
+      if (
+        typeof item === "string" ||
+        typeof item === "number"
+      ) {
+        const value = String(item);
+        return {
+          id: value,
+          name: getCategoryName(value)
+        };
+      }
+      if (item && typeof item === "object") {
+        const id =
+          item.id ??
+          item.code ??
+          item.category ??
+          item.value ??
+          "";
+        const name =
+          item.name ??
+          item.title ??
+          getCategoryName(id);
+        return {
+          id: String(id),
+          name: String(name)
+        };
+      }
+      return {
+        id: "",
+        name: ""
+      };
+    }
+    function renderCategories() {
+      const items = state.categories
+        .map(normalizeCategoryItem)
+        .filter(item => item.id || item.name);
+      let html = "";
+      html += `
+        <button
+          class="category-btn ${state.category === "" ? "active" : ""}"
+          type="button"
+          data-category=""
+        >
+          全部
+        </button>
+      `;
+      for (const item of items) {
+        const active =
+          state.category === item.id
+            ? "active"
+            : "";
+        html += `
+          <button
+            class="category-btn ${active}"
+            type="button"
+            data-category="${escapeHtml(item.id)}"
+          >
+            ${escapeHtml(item.name)}
+          </button>
+        `;
+      }
+      categoriesEl.innerHTML = html;
+      categoriesEl
+        .querySelectorAll(".category-btn")
+        .forEach(button => {
+          button.addEventListener("click", () => {
+            state.category =
+              button.dataset.category || "";
+            renderCategories();
+            renderProducts();
+          });
+        });
+    }
+    /*
+     * ============================================================
+     * 商品
+     * ============================================================
+     */
+    async function loadProducts() {
+      if (state.loading) {
+        return;
+      }
+      state.loading = true;
+      statusText.textContent = "正在加载商品...";
+      productsEl.innerHTML = `
+        <div class="loading">
+          <span class="loading-dot">●</span>
+          正在加载商品...
+        </div>
+      `;
+      try {
+        /*
+         * 这里只请求 active=1。
+         *
+         * 分类和搜索由前端处理，
+         * 这样不会依赖后端是否支持
+         * category / keyword 参数。
+         */
+        const data = await fetchJson(
+          "/api/products?active=1"
+        );
+        state.products = normalizeProducts(data);
+        updateText.textContent =
+          "更新于 " +
+          new Date().toLocaleTimeString(
+            "zh-CN",
+            {
+              hour: "2-digit",
+              minute: "2-digit"
+            }
+          );
+        renderProducts();
+      } catch (error) {
+        console.error(
+          "商品加载失败",
+          error
+        );
+        state.products = [];
+        statusText.textContent =
+          "商品加载失败";
+        productsEl.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">⚠️</div>
+            <div>商品加载失败</div>
+            <div style="margin-top:8px;font-size:12px;">
+              请点击右上角刷新重试
+            </div>
+          </div>
+        `;
+      } finally {
+        state.loading = false;
+      }
+    }
+    function categoryMatches(product) {
+      if (!state.category) {
+        return true;
+      }
+      const selected =
+        String(state.category)
+          .trim()
+          .toLowerCase();
+      const raw =
+        String(product.category ?? "")
+          .trim()
+          .toLowerCase();
+      if (raw === selected) {
+        return true;
+      }
+      const selectedName =
+        getCategoryName(selected)
+          .trim()
+          .toLowerCase();
+      return raw === selectedName;
+    }
+    function keywordMatches(product) {
+      const keyword =
+        state.keyword
+          .trim()
+          .toLowerCase();
+      if (!keyword) {
+        return true;
+      }
+      const text = [
+        product.name,
+        product.code,
+        product.category,
+        getCategoryName(product.category),
+        product.description
+      ]
+        .map(value =>
+          String(value ?? "")
+            .toLowerCase()
+        )
+        .join(" ");
+      return text.includes(keyword);
+    }
+    function getFilteredProducts() {
+      return state.products.filter(product => {
+        return (
+          categoryMatches(product) &&
+          keywordMatches(product)
+        );
+      });
+    }
+    function renderProducts() {
+      const list = getFilteredProducts();
+      statusText.textContent =
+        "共 " + list.length + " 个商品";
+      if (!list.length) {
+        productsEl.innerHTML = `
+          <div class="empty" style="grid-column:1/-1;">
+            <div class="empty-icon">📦</div>
+            <div>没有找到商品</div>
+            <div style="margin-top:7px;font-size:12px;">
+              换一个关键词或分类试试
+            </div>
+          </div>
+        `;
+        return;
+      }
+      productsEl.innerHTML = "";
+      list.forEach(product => {
+        const card =
+          document.createElement("div");
+        card.className = "card";
+        const photoUrl =
+          getPhotoUrl(product);
+        const out =
+          stockIsOut(product.stock);
+        const stockText =
+          formatStock(product.stock);
+        card.innerHTML = `
+          <div class="photo-wrap">
+            ${
+              photoUrl
+                ? `
+                  <img
+                    class="photo"
+                    src="${escapeHtml(photoUrl)}"
+                    alt="${escapeHtml(product.name || "商品")}"
+                    loading="lazy"
+                  >
+                `
+                : `
+                  <div class="no-photo">📦</div>
+                `
+            }
+            <div class="stock-badge ${out ? "out" : ""}">
+              ${escapeHtml(stockText)}
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="product-name">
+              ${escapeHtml(product.name || "未命名商品")}
+            </div>
+            <div class="product-code">
+              编号：
+              ${escapeHtml(product.code || "-")}
+            </div>
+            <div class="product-bottom">
+              <div class="price">
+                ${escapeHtml(formatPrice(product.price))}
+              </div>
+              <button
+                class="inquiry-btn"
+                type="button"
+                data-action="inquiry"
+              >
+                询价
+              </button>
+            </div>
+            <button
+              class="detail-btn"
+              type="button"
+              data-action="detail"
+            >
+              查看详情
+            </button>
+          </div>
+        `;
+        const inquiryBtn =
+          card.querySelector(
+            '[data-action="inquiry"]'
+          );
+        const detailBtn =
+          card.querySelector(
+            '[data-action="detail"]'
+          );
+        inquiryBtn.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
+            directInquiry(product);
+          }
+        );
+        detailBtn.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
+            openDetail(product);
+          }
+        );
+        /*
+         * 点击图片 / 卡片主体也可以查看详情。
+         */
+        card.addEventListener(
+          "click",
+          event => {
+            if (
+              event.target.closest("button")
+            ) {
+              return;
+            }
+            openDetail(product);
+          }
+        );
+        productsEl.appendChild(card);
+      });
+    }
+    /*
+     * ============================================================
+     * 商品详情
+     * ============================================================
+     */
+    function openDetail(product) {
+      state.selectedProduct = product;
+      detailTitle.textContent =
+        product.name || "未命名商品";
+      detailCode.textContent =
+        "编号：" +
+        (product.code || "-");
+      detailCategory.textContent =
+        getCategoryName(product.category);
+      detailPrice.textContent =
+        formatPrice(product.price);
+      detailStock.textContent =
+        formatStock(product.stock);
+      const description =
+        String(product.description || "")
+          .trim();
+      if (description) {
+        detailDescription.style.display =
+          "block";
+        detailDescription.textContent =
+          description;
+      } else {
+        detailDescription.style.display =
+          "none";
+        detailDescription.textContent =
+          "";
+      }
+      const photoUrl =
+        getPhotoUrl(product);
+      if (photoUrl) {
+        detailPhoto.src = photoUrl;
+        detailPhoto.alt =
+          product.name || "商品图片";
+        detailPhoto.style.display =
+          "block";
+        detailPhoto.onerror = () => {
+          detailPhoto.style.display =
+            "none";
+        };
+      } else {
+        detailPhoto.removeAttribute("src");
+        detailPhoto.style.display =
+          "none";
+      }
+      detailMask.classList.add("show");
+      if (tg) {
+        try {
+          tg.BackButton.show();
+        } catch (e) {}
+      }
+    }
+    function closeDetail() {
+      detailMask.classList.remove("show");
+      state.selectedProduct = null;
+      if (tg) {
+        try {
+          tg.BackButton.hide();
+        } catch (e) {}
+      }
+    }
+    /*
+     * ============================================================
+     * 核心功能：
+     *
+     * 商品 → 询价 → 自动记录 → 打开人工客服
+     * ============================================================
+     */
+    async function directInquiry(product) {
+      if (!product) {
+        return;
+      }
+      /*
+       * 轻微震动反馈
+       */
+      if (tg && tg.HapticFeedback) {
+        try {
+          tg.HapticFeedback.impactOccurred("light");
+        } catch (e) {}
+      }
+      const user =
+        getUserInfo();
+      /*
+       * 自动生成询价内容。
+       *
+       * 用户不需要再填写任何内容。
+       */
+      const inquiryMessage =
+        [
+          "客户点击了一键询价",
+          "商品：" +
+            (product.name || "-"),
+          "编号：" +
+            (product.code || "-"),
+          "分类：" +
+            getCategoryName(product.category),
+          "价格：" +
+            formatPrice(product.price),
+          "库存：" +
+            formatStock(product.stock)
+        ].join("\n");
+      /*
+       * 1. 自动记录询价
+       *
+       * keepalive=true：
+       * 即使随后跳转 Telegram，
+       * 浏览器也尽量把这个请求发出去。
+       *
+       * 记录失败不会影响联系客服。
+       */
+      try {
+        fetch(
+          "/api/inquiry",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body: JSON.stringify({
+              product:
+                (product.name || "-") +
+                " [" +
+                (product.code || "") +
+                "]",
+              message:
+                inquiryMessage,
+              user_id:
+                user.user_id,
+              username:
+                user.username,
+              first_name:
+                user.first_name,
+              last_name:
+                user.last_name
+            }),
+            keepalive: true
+          }
+        ).catch(error => {
+          console.log(
+            "询价记录提交失败",
+            error
+          );
+        });
+      } catch (error) {
+        console.log(
+          "询价记录异常",
+          error
+        );
+      }
+      /*
+       * 2. 直接打开人工客服 Telegram
+       *
+       * 不弹询价窗口。
+       * 不要求客户填写文字。
+       */
+      openServiceTelegram();
+    }
+    function openServiceTelegram() {
+      const username =
+        String(SERVICE_USERNAME || "")
+          .trim()
+          .replace(/^@/, "");
+      if (!username) {
+        showToast(
+          "客服账号还没有设置"
+        );
+        return;
+      }
+      const telegramUrl =
+        "https://t.me/" +
+        encodeURIComponent(username);
+      /*
+       * Telegram Mini App 环境：
+       * 优先使用 openTelegramLink。
+       */
+      if (
+        tg &&
+        typeof tg.openTelegramLink ===
+          "function"
+      ) {
+        try {
+          tg.openTelegramLink(
+            telegramUrl
+          );
+          return;
+        } catch (error) {
+          console.log(
+            "openTelegramLink 失败",
+            error
+          );
+        }
+      }
+      /*
+       * 普通浏览器 / 备用方案
+       */
+      try {
+        window.location.href =
+          telegramUrl;
+      } catch (error) {
+        window.open(
+          telegramUrl,
+          "_blank"
+        );
+      }
+    }
+    /*
+     * ============================================================
+     * 搜索
+     * ============================================================
+     */
+    searchInput.addEventListener(
+      "input",
+      () => {
+        state.keyword =
+          searchInput.value || "";
+        renderProducts();
+      }
     );
-
-
-    document
-      .getElementById('count')
-      .textContent =
-        '加载失败';
-
-
-    grid.innerHTML =
-
-      '<div class="empty">' +
-
-      '商品加载失败' +
-
-      '<br>' +
-
-      '<button ' +
-      'class="refresh" ' +
-      'style="margin-top:12px" ' +
-      'onclick="loadProducts()">' +
-
-      '重新加载' +
-
-      '</button>' +
-
-      '</div>';
-
-  }
-
-}
-
-
-/* =========================================================
-   搜索事件
-========================================================= */
-
-let searchTimer = null;
-
-
-document
-  .getElementById('search')
-  .addEventListener(
-    'input',
-    function(){
-
-      updateSearchClear();
-
-      clearTimeout(
-        searchTimer
-      );
-
-
-      searchTimer =
-        setTimeout(
-          function(){
-
-            loadProducts();
-
-          },
-          280
+    /*
+     * ============================================================
+     * 刷新
+     * ============================================================
+     */
+    refreshBtn.addEventListener(
+      "click",
+      async () => {
+        if (state.loading) {
+          return;
+        }
+        if (tg && tg.HapticFeedback) {
+          try {
+            tg.HapticFeedback
+              .impactOccurred("light");
+          } catch (e) {}
+        }
+        await loadProducts();
+        showToast("商品已刷新");
+      }
+    );
+    /*
+     * ============================================================
+     * 商品详情按钮
+     * ============================================================
+     */
+    detailCloseBtn.addEventListener(
+      "click",
+      closeDetail
+    );
+    detailInquiryBtn.addEventListener(
+      "click",
+      () => {
+        if (
+          state.selectedProduct
+        ) {
+          directInquiry(
+            state.selectedProduct
+          );
+        }
+      }
+    );
+    /*
+     * 点击遮罩关闭详情
+     */
+    detailMask.addEventListener(
+      "click",
+      event => {
+        if (
+          event.target === detailMask
+        ) {
+          closeDetail();
+        }
+      }
+    );
+    /*
+     * ============================================================
+     * Telegram 返回按钮
+     * ============================================================
+     */
+    if (tg && tg.BackButton) {
+      try {
+        tg.BackButton.onClick(
+          closeDetail
         );
-
+      } catch (e) {}
     }
-  );
-
-
-/* =========================================================
-   键盘回车
-========================================================= */
-
-document
-  .getElementById('search')
-  .addEventListener(
-    'keydown',
-    function(event){
-
-      if(
-        event.key === 'Enter'
-      ){
-
-        event.preventDefault();
-
-        clearTimeout(
-          searchTimer
-        );
-
-        loadProducts();
-
-      }
-
+    /*
+     * ============================================================
+     * 初始化
+     * ============================================================
+     */
+    async function init() {
+      renderCategories();
+      await Promise.all([
+        loadCategories(),
+        loadProducts()
+      ]);
     }
-  );
-
-
-/* =========================================================
-   点击遮罩关闭
-========================================================= */
-
-document
-  .getElementById('mask')
-  .addEventListener(
-    'click',
-    function(event){
-
-      if(
-        event.target.id === 'mask'
-      ){
-
-        closeModal();
-
-      }
-
-    }
-  );
-
-
-document
-  .getElementById('detailMask')
-  .addEventListener(
-    'click',
-    function(event){
-
-      if(
-        event.target.id ===
-        'detailMask'
-      ){
-
-        closeDetail();
-
-      }
-
-    }
-  );
-
-
-/* =========================================================
-   ESC 关闭弹窗
-========================================================= */
-
-document
-  .addEventListener(
-    'keydown',
-    function(event){
-
-      if(
-        event.key === 'Escape'
-      ){
-
-        closeModal();
-
-        closeDetail();
-
-      }
-
-    }
-  );
-
-
-/* =========================================================
-   初始化
-========================================================= */
-
-(async function(){
-
-  await loadCategories();
-
-  await loadProducts();
-
-})();
-</script>
-
+    init();
+  </script>
 </body>
 </html>
