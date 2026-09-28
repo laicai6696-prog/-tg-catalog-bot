@@ -297,10 +297,27 @@ def product_delete(product_id):
     execute(f"DELETE FROM products WHERE id={p}", (product_id,))
 
 
+def normalize_category(value):
+    """支持 c1-c12，也支持 CSV 里的中文分类名称。"""
+    raw = str(value or "").strip()
+    if raw in CATEGORIES:
+        return raw
+    for code, name in CATEGORIES.items():
+        if raw == name or raw == name.replace("系列", ""):
+            return code
+    # 兼容“分类一/分类二”等旧数据
+    old_map = {
+        "分类一": "c1", "分类二": "c2", "分类三": "c3", "分类四": "c4",
+        "分类五": "c5", "分类六": "c6", "分类七": "c7", "分类八": "c8",
+        "分类九": "c9", "分类十": "c10", "分类十一": "c11", "分类十二": "c12",
+    }
+    return old_map.get(raw, "")
+
+
 def product_upsert(row, photo_id=None):
     name = str(row.get("name", "")).strip()
     code = str(row.get("code", "")).strip()
-    category = str(row.get("category", "")).strip()
+    category = normalize_category(row.get("category", ""))
     price = str(row.get("price", "")).strip()
     description = str(row.get("description", "") or "").strip()
     try:
@@ -310,7 +327,7 @@ def product_upsert(row, photo_id=None):
     if not name:
         raise ValueError("CSV 中存在空商品名称")
     if category not in CATEGORIES:
-        raise ValueError(f"分类 {category} 无效，应为 c1-c12")
+        raise ValueError(f"分类无效：{row.get("category", "")}，应填写 c1-c12 或中文分类名称")
     existing = None
     if code:
         p = db_placeholder()
@@ -594,6 +611,19 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("已取消当前操作。", reply_markup=main_menu(update.effective_user.id))
 
 
+async def upload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """管理员快捷进入一键 ZIP 上传状态。"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("无权限。")
+        return
+    clear_state(context)
+    context.user_data["state"] = "zip_import"
+    await update.message.reply_text(
+        "📦 一键上传商品+图片\\n\\n请直接发送 93商品+93图片 ZIP 文件。\\n\\n"
+        "系统会自动检查 CSV=93、P001～P093、图片01～93，并自动匹配。"
+    )
+
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("无权限。")
@@ -758,7 +788,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "admin_zip":
         clear_state(context)
         context.user_data["state"] = "zip_import"
-        await safe_edit(query, "📦 一键上传商品+图片\n\n请发送一个 ZIP 文件。\n\n要求：\n• 1 个 CSV\n• 93 行商品\n• 93 张图片\n• 图片命名 01.jpg ～ 93.jpg（支持 jpg/jpeg/png/webp）\n• CSV 第1行对应图片01，第93行对应图片93")
+        await safe_edit(query, "📦 一键上传商品+图片\n\n请直接发送你的一键上传 ZIP。\n\n你的 ZIP 可以是：\n• 1 个 CSV\n• images/01.jpg ～ images/93.jpg\n• 或 01.jpg ～ 93.jpg 放在根目录\n\n系统会自动检查：\n✅ CSV 正好 93 个商品\n✅ 编号 P001～P093\n✅ 图片 01～93 全部存在\n✅ 自动对应商品\n\n检查通过后一次性导入。")
         return
 
     if data == "admin_status":
@@ -1201,12 +1231,17 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                     )
                 if not str(row.get("name", "")).strip():
                     raise ValueError(f"CSV 第 {index} 行商品名称为空")
-                if str(row.get("category", "")).strip() not in CATEGORIES:
+                normalized_category = normalize_category(row.get("category", ""))
+                if normalized_category not in CATEGORIES:
                     raise ValueError(
-                        f"CSV 第 {index} 行分类无效：{row.get('category', '')}，应为 c1-c12"
+                        f"CSV 第 {index} 行分类无效：{row.get('category', '')}，支持 c1-c12 或中文分类名称"
                     )
+                row["category"] = normalized_category
 
-            await update.effective_chat.send_message("⏳ 已验证 ZIP：1个CSV + 93张图片。开始导入，请稍候…")
+            await update.effective_chat.send_message(
+                "⏳ 已验证 ZIP：1个CSV + 93张图片，且 P001～P093 与 01～93 已一一对应。\\n"
+                "开始导入，请稍候…"
+            )
             for index, row in enumerate(rows, start=1):
                 temp_image = temp_dir / f"{index:02d}{Path(image_map[index]).suffix.lower()}"
                 temp_image.write_bytes(z.read(image_map[index]))
@@ -1480,6 +1515,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("upload", upload_command))
     application.add_handler(CallbackQueryHandler(callback_handler))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
