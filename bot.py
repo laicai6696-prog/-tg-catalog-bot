@@ -287,6 +287,86 @@ def product_set_stock(product_id, stock):
     execute(f"UPDATE products SET stock={p} WHERE id={p}", (stock, product_id))
 
 
+def bulk_update_stock_from_csv(path):
+    """按商品编号批量更新库存。支持 UTF-8/UTF-8-SIG/GB18030。
+
+    CSV 至少需要两列：code,stock。
+    也兼容完整商品 CSV，只读取 code 和 stock，不修改其他字段。
+    全部校验通过后才一次性提交，避免更新到一半失败。
+    """
+    data = Path(path).read_bytes()
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "gb18030"):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            pass
+    if text is None:
+        raise ValueError("无法识别 CSV 编码，请保存为 UTF-8 CSV")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise ValueError("CSV 没有表头")
+
+    fields = {str(x).strip().lower(): x for x in reader.fieldnames if x}
+    if "code" not in fields or "stock" not in fields:
+        raise ValueError("库存 CSV 必须包含两列：code,stock")
+
+    rows = []
+    seen = set()
+    for line_no, raw in enumerate(reader, start=2):
+        code = str(raw.get(fields["code"], "") or "").strip().upper()
+        stock_text = str(raw.get(fields["stock"], "") or "").strip()
+        # 忽略完全空白行
+        if not code and not stock_text:
+            continue
+        if not code:
+            raise ValueError(f"第 {line_no} 行商品编号为空")
+        if code in seen:
+            raise ValueError(f"第 {line_no} 行商品编号重复：{code}")
+        seen.add(code)
+        try:
+            if not re.fullmatch(r"\d+", stock_text):
+                raise ValueError
+            stock = int(stock_text)
+        except ValueError:
+            raise ValueError(f"第 {line_no} 行库存无效：{stock_text!r}，必须是 0 或以上整数")
+        rows.append((code, stock))
+
+    if not rows:
+        raise ValueError("CSV 没有可更新的库存数据")
+
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        ph = "%s" if USE_POSTGRES else "?"
+        missing = []
+        product_ids = []
+        for code, stock in rows:
+            cur.execute(f"SELECT id FROM products WHERE UPPER(code)={ph} ORDER BY id LIMIT 1", (code,))
+            row = cur.fetchone()
+            if row is None:
+                missing.append(code)
+            else:
+                pid = row["id"] if isinstance(row, dict) else row[0]
+                product_ids.append((pid, stock, code))
+
+        if missing:
+            raise ValueError("找不到商品编号：" + ", ".join(missing[:20]) + (" 等" if len(missing) > 20 else ""))
+
+        for pid, stock, code in product_ids:
+            cur.execute(f"UPDATE products SET stock={ph} WHERE id={ph}", (stock, pid))
+
+        conn.commit()
+        return len(product_ids)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def product_set_active(product_id, active):
     p = db_placeholder()
     execute(f"UPDATE products SET active={p} WHERE id={p}", (active, product_id))
@@ -298,14 +378,13 @@ def product_delete(product_id):
 
 
 def normalize_category(value):
-    """支持 c1-c12，也支持 CSV 里的中文分类名称。"""
+    """支持 c1-c12 和 CSV 中的中文分类名称。"""
     raw = str(value or "").strip()
     if raw in CATEGORIES:
         return raw
     for code, name in CATEGORIES.items():
         if raw == name or raw == name.replace("系列", ""):
             return code
-    # 兼容“分类一/分类二”等旧数据
     old_map = {
         "分类一": "c1", "分类二": "c2", "分类三": "c3", "分类四": "c4",
         "分类五": "c5", "分类六": "c6", "分类七": "c7", "分类八": "c8",
@@ -327,7 +406,7 @@ def product_upsert(row, photo_id=None):
     if not name:
         raise ValueError("CSV 中存在空商品名称")
     if category not in CATEGORIES:
-        raise ValueError(f"分类无效：{row.get("category", "")}，应填写 c1-c12 或中文分类名称")
+        raise ValueError(f"分类 {category} 无效，应为 c1-c12")
     existing = None
     if code:
         p = db_placeholder()
@@ -458,6 +537,7 @@ def admin_menu_keyboard():
         [InlineKeyboardButton("📦 商品管理", callback_data="admin_products:0"), InlineKeyboardButton("➕ 添加商品", callback_data="admin_add")],
         [InlineKeyboardButton("📨 询价记录", callback_data="admin_inquiries:0"), InlineKeyboardButton("📊 系统状态", callback_data="admin_status")],
         [InlineKeyboardButton("📦 一键上传商品+图片", callback_data="admin_zip"), InlineKeyboardButton("📥 只导入CSV", callback_data="admin_csv")],
+        [InlineKeyboardButton("📊 一键批量改库存", callback_data="bulk_stock" )],
         [InlineKeyboardButton("🟢 全部上架", callback_data="bulk_on"), InlineKeyboardButton("🔴 全部下架", callback_data="bulk_off")],
         [InlineKeyboardButton("⬅️ 返回主菜单", callback_data="home")],
     ])
@@ -491,7 +571,7 @@ def admin_product_keyboard(product):
 def clear_state(context):
     for key in [
         "state", "pending_product_id", "edit_product_id", "stock_product_id",
-        "photo_product_id", "inquiry_product_id", "zip_import",
+        "photo_product_id", "inquiry_product_id", "zip_import", "bulk_stock_import",
     ]:
         context.user_data.pop(key, None)
 
@@ -609,19 +689,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
     await update.message.reply_text("已取消当前操作。", reply_markup=main_menu(update.effective_user.id))
-
-
-async def upload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """管理员快捷进入一键 ZIP 上传状态。"""
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("无权限。")
-        return
-    clear_state(context)
-    context.user_data["state"] = "zip_import"
-    await update.message.reply_text(
-        "📦 一键上传商品+图片\\n\\n请直接发送 93商品+93图片 ZIP 文件。\\n\\n"
-        "系统会自动检查 CSV=93、P001～P093、图片01～93，并自动匹配。"
-    )
 
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -779,6 +846,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, "已完成全部商品状态更新。", admin_menu_keyboard())
         return
 
+    if data == "bulk_stock":
+        clear_state(context)
+        context.user_data["state"] = "bulk_stock_import"
+        await safe_edit(
+            query,
+            "📊 一键批量修改库存\n\n"
+            "请发送一个 CSV 文件。\n\n"
+            "格式：\n"
+            "code,stock\n"
+            "P001,20\n"
+            "P002,15\n"
+            "P003,30\n\n"
+            "只修改库存，不会修改商品名称、价格、图片、分类和上下架状态。\n"
+            "商品编号必须与现有商品一致。\n\n"
+            "也支持你原来的完整商品 CSV，但只读取 code 和 stock 两列。\n"
+            "发送 /cancel 可取消。"
+        )
+        return
+
     if data == "admin_csv":
         clear_state(context)
         context.user_data["state"] = "csv_import"
@@ -788,7 +874,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "admin_zip":
         clear_state(context)
         context.user_data["state"] = "zip_import"
-        await safe_edit(query, "📦 一键上传商品+图片\n\n请直接发送你的一键上传 ZIP。\n\n你的 ZIP 可以是：\n• 1 个 CSV\n• images/01.jpg ～ images/93.jpg\n• 或 01.jpg ～ 93.jpg 放在根目录\n\n系统会自动检查：\n✅ CSV 正好 93 个商品\n✅ 编号 P001～P093\n✅ 图片 01～93 全部存在\n✅ 自动对应商品\n\n检查通过后一次性导入。")
+        await safe_edit(query, "📦 一键上传商品+图片\n\n请发送一个 ZIP 文件。\n\n要求：\n• 1 个 CSV\n• 93 行商品\n• 93 张图片\n• 图片命名 01.jpg ～ 93.jpg（支持 jpg/jpeg/png/webp）\n• CSV 第1行对应图片01，第93行对应图片93")
         return
 
     if data == "admin_status":
@@ -1153,6 +1239,29 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as exc:
             await update.message.reply_text(f"❌ CSV 导入失败：{exc}")
         return
+    if state == "bulk_stock_import" and filename.lower().endswith(".csv"):
+        temp_path = UPLOAD_DIR / f"bulk_stock_{update.effective_user.id}_{doc.file_unique_id}.csv"
+        try:
+            tg_file = await context.bot.get_file(doc.file_id)
+            await tg_file.download_to_drive(custom_path=str(temp_path))
+            count = bulk_update_stock_from_csv(temp_path)
+            await safe_delete_message(update.message)
+            clear_state(context)
+            await update.effective_chat.send_message(
+                f"✅ 批量修改库存完成！\n\n成功更新：{count} 个商品\n\n"
+                "商品名称、价格、图片、分类和上下架状态均未修改。",
+                reply_markup=admin_menu_keyboard(),
+            )
+        except Exception as exc:
+            print(f"批量修改库存失败：{type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            await update.message.reply_text(f"❌ 批量修改库存失败：\n{type(exc).__name__}: {exc}")
+        finally:
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+        return
     if state in ("add_photo", "replace_photo") and Path(filename).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
         pid = context.user_data.get("pending_product_id") if state == "add_photo" else context.user_data.get("photo_product_id")
         if pid:
@@ -1234,14 +1343,11 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                 normalized_category = normalize_category(row.get("category", ""))
                 if normalized_category not in CATEGORIES:
                     raise ValueError(
-                        f"CSV 第 {index} 行分类无效：{row.get('category', '')}，支持 c1-c12 或中文分类名称"
+                        f"CSV 第 {index} 行分类无效：{row.get('category', '')}；支持 c1-c12 或中文分类名称"
                     )
                 row["category"] = normalized_category
 
-            await update.effective_chat.send_message(
-                "⏳ 已验证 ZIP：1个CSV + 93张图片，且 P001～P093 与 01～93 已一一对应。\\n"
-                "开始导入，请稍候…"
-            )
+            await update.effective_chat.send_message("⏳ 已验证 ZIP：1个CSV + 93张图片。开始导入，请稍候…")
             for index, row in enumerate(rows, start=1):
                 temp_image = temp_dir / f"{index:02d}{Path(image_map[index]).suffix.lower()}"
                 temp_image.write_bytes(z.read(image_map[index]))
@@ -1271,7 +1377,13 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
         await update.effective_chat.send_message("✅ 93个商品 + 93张图片全部导入完成。", reply_markup=admin_menu_keyboard())
     except Exception as exc:
         clear_state(context)
-        await update.effective_chat.send_message(f"❌ ZIP 导入失败：{exc}", reply_markup=admin_menu_keyboard())
+        error_text = f"{type(exc).__name__}: {exc}"
+        print(f"ZIP 导入失败：{error_text}")
+        traceback.print_exc()
+        await update.effective_chat.send_message(
+            f"❌ ZIP 导入失败：\n{error_text}",
+            reply_markup=admin_menu_keyboard(),
+        )
     finally:
         try:
             import shutil
@@ -1491,8 +1603,12 @@ def start_web_server():
 # -------------------- 启动 --------------------
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    print("Telegram handler error:")
-    traceback.print_exception(type(context.error), context.error, context.error.__traceback__)
+    error = context.error
+    print("========== TELEGRAM HANDLER ERROR ==========")
+    print(f"Error type: {type(error).__name__}")
+    print(f"Error: {error!r}")
+    traceback.print_exception(type(error), error, error.__traceback__)
+    print("============================================")
 
 
 def startup_import_if_empty():
