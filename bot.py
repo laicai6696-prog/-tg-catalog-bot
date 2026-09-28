@@ -686,6 +686,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def upload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ç®¡çåå¿«æ·è¿å¥ 93 åå ZIP å¯¼å¥æµç¨ã"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("æ æéã")
+        return
+    clear_state(context)
+    context.user_data["state"] = "zip_import"
+    await update.message.reply_text(
+        "ð¦ ä¸é®ä¸ä¼ åå+å¾ç\n\n"
+        "è¯·åé ZIP æä»¶ã\n\n"
+        "è¦æ±ï¼\n"
+        "â¢ 1 ä¸ª CSV\n"
+        "â¢ 93 è¡åå\n"
+        "â¢ 93 å¼ å¾ç\n"
+        "â¢ å¾çå½å 01.jpg ï½ 93.jpgï¼æ¯æ jpg/jpeg/png/webpï¼\n"
+        "â¢ CSV ç¬¬1è¡å¯¹åºå¾ç01ï¼ç¬¬93è¡å¯¹åºå¾ç93\n\n"
+        "åé /cancel å¯åæ¶ã"
+    )
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
     await update.message.reply_text("å·²åæ¶å½åæä½ã", reply_markup=main_menu(update.effective_user.id))
