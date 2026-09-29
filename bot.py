@@ -429,7 +429,42 @@ def product_upsert(row, photo_id=None):
                 (name, category, price, stock, description, photo_id, pid),
             )
     return pid
+# -------------------- /upload 一键修改库存命令 --------------------
 
+async def upload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """管理员通过 /upload 进入一键批量修改库存。"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("无权限。")
+        return
+
+    clear_state(context)
+
+    context.user_data["state"] = "bulk_stock_import"
+
+    await update.message.reply_text(
+        "📊 一键修改库存\n\n"
+        "请发送库存 CSV 文件。\n\n"
+        "CSV 格式：\n"
+        "code,stock\n"
+        "P001,20\n"
+        "P002,15\n"
+        "P003,30\n\n"
+        "说明：\n"
+        "• code = 商品编号\n"
+        "• stock = 新库存数量\n"
+        "• 只修改库存\n"
+        "• 不修改商品名称\n"
+        "• 不修改价格\n"
+        "• 不修改分类\n"
+        "• 不修改图片\n"
+        "• 不修改上下架状态\n\n"
+        "例如：\n"
+        "P001,100\n"
+        "P002,50\n"
+        "P003,0\n\n"
+        "商品编号必须已经存在。\n"
+        "发送 /cancel 可取消。"
+    )
 
 # -------------------- CSV --------------------
 
