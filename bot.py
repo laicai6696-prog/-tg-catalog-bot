@@ -40,23 +40,23 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 WEB_URL = os.getenv("WEB_URL", "https://tg-catalog-bot-10.onrender.com").strip().rstrip("/")
 PORT = int(os.getenv("PORT", "10000"))
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-CSV_FILE = os.getenv("CSV_FILE", "Telegramååå¯¼å¥è¡¨_93ä¸ª_å¯ç´æ¥å¯¼å¥.csv").strip()
+CSV_FILE = os.getenv("CSV_FILE", "Telegram商品导入表_93个_可直接导入.csv").strip()
 SERVICE_USERNAME = os.getenv("SERVICE_USERNAME", "niubanggu").strip().lstrip("@")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "shangpinmulu2026_bot").strip().lstrip("@")
 
 CATEGORIES = {
-    "c1": "åå¤©ä¸ç³»å",
-    "c2": "çç«ç³»å",
-    "c3": "åäº¬ç³»å",
-    "c4": "è·è±ç³»å",
-    "c5": "èèçç³»å",
-    "c6": "ç¡ä¸¹ç³»å",
-    "c7": "é»éå¶ç³»å",
-    "c8": "èçç³»å",
-    "c9": "å©ç¾¤ç³»å",
-    "c10": "é»é¹¤æ¥¼ç³»å",
-    "c11": "ä¸­åç³»å",
-    "c12": "ç½ç®ç³»å",
+    "c1": "和天下系列",
+    "c2": "熊猫系列",
+    "c3": "南京系列",
+    "c4": "荷花系列",
+    "c5": "芙蓉王系列",
+    "c6": "牡丹系列",
+    "c7": "黄金叶系列",
+    "c8": "苏烟系列",
+    "c9": "利群系列",
+    "c10": "黄鹤楼系列",
+    "c11": "中华系列",
+    "c12": "白皮系列",
 }
 
 
@@ -76,12 +76,12 @@ USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
 DB_PATH = BASE_DIR / "bot.db"
 
 if not BOT_TOKEN:
-    raise RuntimeError("ç¼ºå°ç¯å¢åé BOT_TOKEN")
+    raise RuntimeError("缺少环境变量 BOT_TOKEN")
 if not ADMIN_IDS:
-    raise RuntimeError("ç¼ºå°ææç ADMIN_IDSãè¯·å¡«å Telegram æ°å­ç¨æ·IDï¼ä¸è¦å¡«å @ç¨æ·å")
+    raise RuntimeError("缺少有效的 ADMIN_IDS。请填写 Telegram 数字用户ID，不要填写 @用户名")
 
 
-# -------------------- æ°æ®åº --------------------
+# -------------------- 数据库 --------------------
 
 def now_text():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -93,7 +93,7 @@ def db_connect():
             import psycopg2
             from psycopg2.extras import RealDictCursor
         except ImportError as exc:
-            raise RuntimeError("ä½¿ç¨ PostgreSQL æ¶å¿é¡»å®è£ psycopg2-binary") from exc
+            raise RuntimeError("使用 PostgreSQL 时必须安装 psycopg2-binary") from exc
         return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -287,86 +287,6 @@ def product_set_stock(product_id, stock):
     execute(f"UPDATE products SET stock={p} WHERE id={p}", (stock, product_id))
 
 
-def bulk_update_stock_from_csv(path):
-    """æååç¼å·æ¹éæ´æ°åºå­ãæ¯æ UTF-8/UTF-8-SIG/GB18030ã
-
-    CSV è³å°éè¦ä¸¤åï¼code,stockã
-    ä¹å¼å®¹å®æ´åå CSVï¼åªè¯»å code å stockï¼ä¸ä¿®æ¹å¶ä»å­æ®µã
-    å¨é¨æ ¡éªéè¿åæä¸æ¬¡æ§æäº¤ï¼é¿åæ´æ°å°ä¸åå¤±è´¥ã
-    """
-    data = Path(path).read_bytes()
-    text = None
-    for enc in ("utf-8-sig", "utf-8", "gb18030"):
-        try:
-            text = data.decode(enc)
-            break
-        except UnicodeDecodeError:
-            pass
-    if text is None:
-        raise ValueError("æ æ³è¯å« CSV ç¼ç ï¼è¯·ä¿å­ä¸º UTF-8 CSV")
-
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
-        raise ValueError("CSV æ²¡æè¡¨å¤´")
-
-    fields = {str(x).strip().lower(): x for x in reader.fieldnames if x}
-    if "code" not in fields or "stock" not in fields:
-        raise ValueError("åºå­ CSV å¿é¡»åå«ä¸¤åï¼code,stock")
-
-    rows = []
-    seen = set()
-    for line_no, raw in enumerate(reader, start=2):
-        code = str(raw.get(fields["code"], "") or "").strip().upper()
-        stock_text = str(raw.get(fields["stock"], "") or "").strip()
-        # å¿½ç¥å®å¨ç©ºç½è¡
-        if not code and not stock_text:
-            continue
-        if not code:
-            raise ValueError(f"ç¬¬ {line_no} è¡ååç¼å·ä¸ºç©º")
-        if code in seen:
-            raise ValueError(f"ç¬¬ {line_no} è¡ååç¼å·éå¤ï¼{code}")
-        seen.add(code)
-        try:
-            if not re.fullmatch(r"\d+", stock_text):
-                raise ValueError
-            stock = int(stock_text)
-        except ValueError:
-            raise ValueError(f"ç¬¬ {line_no} è¡åºå­æ æï¼{stock_text!r}ï¼å¿é¡»æ¯ 0 æä»¥ä¸æ´æ°")
-        rows.append((code, stock))
-
-    if not rows:
-        raise ValueError("CSV æ²¡æå¯æ´æ°çåºå­æ°æ®")
-
-    conn = db_connect()
-    try:
-        cur = conn.cursor()
-        ph = "%s" if USE_POSTGRES else "?"
-        missing = []
-        product_ids = []
-        for code, stock in rows:
-            cur.execute(f"SELECT id FROM products WHERE UPPER(code)={ph} ORDER BY id LIMIT 1", (code,))
-            row = cur.fetchone()
-            if row is None:
-                missing.append(code)
-            else:
-                pid = row["id"] if isinstance(row, dict) else row[0]
-                product_ids.append((pid, stock, code))
-
-        if missing:
-            raise ValueError("æ¾ä¸å°ååç¼å·ï¼" + ", ".join(missing[:20]) + (" ç­" if len(missing) > 20 else ""))
-
-        for pid, stock, code in product_ids:
-            cur.execute(f"UPDATE products SET stock={ph} WHERE id={ph}", (stock, pid))
-
-        conn.commit()
-        return len(product_ids)
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
 def product_set_active(product_id, active):
     p = db_placeholder()
     execute(f"UPDATE products SET active={p} WHERE id={p}", (active, product_id))
@@ -378,17 +298,17 @@ def product_delete(product_id):
 
 
 def normalize_category(value):
-    """æ¯æ c1-c12 å CSV ä¸­çä¸­æåç±»åç§°ã"""
+    """支持 c1-c12 和 CSV 中的中文分类名称。"""
     raw = str(value or "").strip()
     if raw in CATEGORIES:
         return raw
     for code, name in CATEGORIES.items():
-        if raw == name or raw == name.replace("ç³»å", ""):
+        if raw == name or raw == name.replace("系列", ""):
             return code
     old_map = {
-        "åç±»ä¸": "c1", "åç±»äº": "c2", "åç±»ä¸": "c3", "åç±»å": "c4",
-        "åç±»äº": "c5", "åç±»å­": "c6", "åç±»ä¸": "c7", "åç±»å«": "c8",
-        "åç±»ä¹": "c9", "åç±»å": "c10", "åç±»åä¸": "c11", "åç±»åäº": "c12",
+        "分类一": "c1", "分类二": "c2", "分类三": "c3", "分类四": "c4",
+        "分类五": "c5", "分类六": "c6", "分类七": "c7", "分类八": "c8",
+        "分类九": "c9", "分类十": "c10", "分类十一": "c11", "分类十二": "c12",
     }
     return old_map.get(raw, "")
 
@@ -404,9 +324,9 @@ def product_upsert(row, photo_id=None):
     except ValueError:
         stock = 0
     if not name:
-        raise ValueError("CSV ä¸­å­å¨ç©ºåååç§°")
+        raise ValueError("CSV 中存在空商品名称")
     if category not in CATEGORIES:
-        raise ValueError(f"åç±» {category} æ æï¼åºä¸º c1-c12")
+        raise ValueError(f"分类 {category} 无效，应为 c1-c12")
     existing = None
     if code:
         p = db_placeholder()
@@ -444,15 +364,15 @@ def read_csv_rows(path):
         except Exception as exc:
             last_error = exc
     if text is None:
-        raise ValueError(f"æ æ³è¯»å CSVï¼{last_error}")
+        raise ValueError(f"无法读取 CSV：{last_error}")
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
-        raise ValueError("CSV æ²¡æè¡¨å¤´")
+        raise ValueError("CSV 没有表头")
     fields = {str(x).strip().lower(): x for x in reader.fieldnames if x}
     required = ["name", "code", "category", "price", "stock"]
     missing = [x for x in required if x not in fields]
     if missing:
-        raise ValueError("CSV ç¼ºå°å­æ®µï¼" + ", ".join(missing))
+        raise ValueError("CSV 缺少字段：" + ", ".join(missing))
     rows = []
     for raw in reader:
         row = {}
@@ -469,44 +389,44 @@ def import_csv_file(path):
     return len(rows)
 
 
-# -------------------- Telegram è¾å© --------------------
+# -------------------- Telegram 辅助 --------------------
 
 def is_admin(user_id):
     return int(user_id) in ADMIN_IDS
 
 
 def cat_name(code):
-    return CATEGORIES.get(code, code or "æªåç±»")
+    return CATEGORIES.get(code, code or "未分类")
 
 
 def product_text(product, admin=False):
-    status = "ð¢ ä¸æ¶" if int(product.get("active", 0) or 0) else "ð´ ä¸æ¶"
-    photo = "æå¾ç" if product.get("photo_id") else "æ å¾ç"
+    status = "🟢 上架" if int(product.get("active", 0) or 0) else "🔴 下架"
+    photo = "有图片" if product.get("photo_id") else "无图片"
     text = (
-        f"ð¦ {product.get('name', '')}\n"
-        f"ç¼å·ï¼{product.get('code') or '-'}\n"
-        f"åç±»ï¼{cat_name(product.get('category'))}\n"
-        f"ä»·æ ¼ï¼{product.get('price') or 'é¢è®®'}\n"
-        f"åºå­ï¼{product.get('stock', 0)}\n"
-        f"ç¶æï¼{status}\n"
-        f"å¾çï¼{photo}\n"
+        f"📦 {product.get('name', '')}\n"
+        f"编号：{product.get('code') or '-'}\n"
+        f"分类：{cat_name(product.get('category'))}\n"
+        f"价格：{product.get('price') or '面议'}\n"
+        f"库存：{product.get('stock', 0)}\n"
+        f"状态：{status}\n"
+        f"图片：{photo}\n"
     )
     if product.get("description"):
-        text += f"æè¿°ï¼{product['description']}\n"
+        text += f"描述：{product['description']}\n"
     if admin:
-        text += f"IDï¼{product.get('id')}"
+        text += f"ID：{product.get('id')}"
     return text
 
 
 def main_menu(user_id):
     rows = [
-        [InlineKeyboardButton("ð ååç®å½", callback_data="catalog")],
-        [InlineKeyboardButton("ð æç´¢åå", callback_data="search")],
-        [InlineKeyboardButton("ð å¨çº¿ååç®å½", web_app=WebAppInfo(url=WEB_URL))],
-        [InlineKeyboardButton("ð¬ å®¢æç´è¾¾", url=f"https://t.me/{SERVICE_USERNAME}")],
+        [InlineKeyboardButton("📚 商品目录", callback_data="catalog")],
+        [InlineKeyboardButton("🔎 搜索商品", callback_data="search")],
+        [InlineKeyboardButton("🌐 在线商品目录", web_app=WebAppInfo(url=WEB_URL))],
+        [InlineKeyboardButton("💬 客服直达", url=f"https://t.me/{SERVICE_USERNAME}")],
     ]
     if is_admin(user_id):
-        rows.append([InlineKeyboardButton("âï¸ ç®¡çåå°", callback_data="admin")])
+        rows.append([InlineKeyboardButton("⚙️ 管理后台", callback_data="admin")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -516,8 +436,8 @@ def catalog_keyboard():
     for i in range(0, len(keys), 2):
         pair = keys[i:i + 2]
         rows.append([InlineKeyboardButton(v, callback_data=f"cat:{k}") for k, v in pair])
-    rows.append([InlineKeyboardButton("ð¦ å¨é¨åå", callback_data="all_products")])
-    rows.append([InlineKeyboardButton("â¬ï¸ è¿å", callback_data="home")])
+    rows.append([InlineKeyboardButton("📦 全部商品", callback_data="all_products")])
+    rows.append([InlineKeyboardButton("⬅️ 返回", callback_data="home")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -528,25 +448,24 @@ def products_keyboard(products, prefix="prod:", back="catalog"):
         if len(label) > 55:
             label = label[:52] + "..."
         rows.append([InlineKeyboardButton(label, callback_data=f"{prefix}{p['id']}")])
-    rows.append([InlineKeyboardButton("â¬ï¸ è¿å", callback_data=back)])
+    rows.append([InlineKeyboardButton("⬅️ 返回", callback_data=back)])
     return InlineKeyboardMarkup(rows)
 
 
 def admin_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("ð¦ ååç®¡ç", callback_data="admin_products:0"), InlineKeyboardButton("â æ·»å åå", callback_data="admin_add")],
-        [InlineKeyboardButton("ð¨ è¯¢ä»·è®°å½", callback_data="admin_inquiries:0"), InlineKeyboardButton("ð ç³»ç»ç¶æ", callback_data="admin_status")],
-        [InlineKeyboardButton("ð¦ ä¸é®ä¸ä¼ åå+å¾ç", callback_data="admin_zip"), InlineKeyboardButton("ð¥ åªå¯¼å¥CSV", callback_data="admin_csv")],
-        [InlineKeyboardButton("ð ä¸é®æ¹éæ¹åºå­", callback_data="bulk_stock" )],
-        [InlineKeyboardButton("ð¢ å¨é¨ä¸æ¶", callback_data="bulk_on"), InlineKeyboardButton("ð´ å¨é¨ä¸æ¶", callback_data="bulk_off")],
-        [InlineKeyboardButton("â¬ï¸ è¿åä¸»èå", callback_data="home")],
+        [InlineKeyboardButton("📦 商品管理", callback_data="admin_products:0"), InlineKeyboardButton("➕ 添加商品", callback_data="admin_add")],
+        [InlineKeyboardButton("📨 询价记录", callback_data="admin_inquiries:0"), InlineKeyboardButton("📊 系统状态", callback_data="admin_status")],
+        [InlineKeyboardButton("📦 一键上传商品+图片", callback_data="admin_zip"), InlineKeyboardButton("📥 只导入CSV", callback_data="admin_csv")],
+        [InlineKeyboardButton("🟢 全部上架", callback_data="bulk_on"), InlineKeyboardButton("🔴 全部下架", callback_data="bulk_off")],
+        [InlineKeyboardButton("⬅️ 返回主菜单", callback_data="home")],
     ])
 
 
 def product_share_url(product):
     pid = int(product["id"])
     share_url = f"https://t.me/{BOT_USERNAME}?start=product_{pid}"
-    share_text = f"ð¦ {product.get('name', '')}\nç¼å·ï¼{product.get('code') or '-'}\nç¹å»æ¥çååè¯¦æ"
+    share_text = f"📦 {product.get('name', '')}\n编号：{product.get('code') or '-'}\n点击查看商品详情"
     return (
         "https://t.me/share/url?url="
         + quote(share_url, safe="")
@@ -558,20 +477,20 @@ def product_share_url(product):
 def admin_product_keyboard(product):
     pid = product["id"]
     active = int(product.get("active", 0) or 0)
-    toggle_text = "ð´ ä¸æ¶" if active else "ð¢ ä¸æ¶"
+    toggle_text = "🔴 下架" if active else "🟢 上架"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("âï¸ ç¼è¾åå", callback_data=f"edit:{pid}"), InlineKeyboardButton("ð¦ ä¿®æ¹åºå­", callback_data=f"stock:{pid}")],
-        [InlineKeyboardButton("ð¼ï¸ æ´æ¢å¾ç", callback_data=f"photo:{pid}"), InlineKeyboardButton(toggle_text, callback_data=f"toggle:{pid}")],
-        [InlineKeyboardButton("ð¤ åäº«åå", url=product_share_url(product))],
-        [InlineKeyboardButton("ðï¸ å é¤åå", callback_data=f"delete:{pid}")],
-        [InlineKeyboardButton("â¬ï¸ ååç®¡ç", callback_data="admin_products:0")],
+        [InlineKeyboardButton("✏️ 编辑商品", callback_data=f"edit:{pid}"), InlineKeyboardButton("📦 修改库存", callback_data=f"stock:{pid}")],
+        [InlineKeyboardButton("🖼️ 更换图片", callback_data=f"photo:{pid}"), InlineKeyboardButton(toggle_text, callback_data=f"toggle:{pid}")],
+        [InlineKeyboardButton("📤 分享商品", url=product_share_url(product))],
+        [InlineKeyboardButton("🗑️ 删除商品", callback_data=f"delete:{pid}")],
+        [InlineKeyboardButton("⬅️ 商品管理", callback_data="admin_products:0")],
     ])
 
 
 def clear_state(context):
     for key in [
         "state", "pending_product_id", "edit_product_id", "stock_product_id",
-        "photo_product_id", "inquiry_product_id", "zip_import", "bulk_stock_import",
+        "photo_product_id", "inquiry_product_id", "zip_import",
     ]:
         context.user_data.pop(key, None)
 
@@ -594,21 +513,21 @@ async def safe_edit(query, text, reply_markup=None):
 
 
 async def send_product_to_user(target, product):
-    """åéååè¯¦æï¼target å¯ä»¥æ¯ Update æ Messageã"""
+    """发送商品详情；target 可以是 Update 或 Message。"""
     text = product_text(product)
     pid = int(product["id"])
     chat = target.effective_chat if hasattr(target, "effective_chat") else getattr(target, "chat", None)
     if chat is None:
-        raise ValueError("æ æ³ç¡®å®åååéç®æ èå¤©")
+        raise ValueError("无法确定商品发送目标聊天")
 
     share_link = product_share_url(product)
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ð¬ æè¦è¯¢ä»·", callback_data=f"inq:{pid}")],
-        [InlineKeyboardButton("ð¤ åäº«åå", url=share_link)],
+        [InlineKeyboardButton("💬 我要询价", callback_data=f"inq:{pid}")],
+        [InlineKeyboardButton("📤 分享商品", url=share_link)],
         [
-            InlineKeyboardButton("â¬ï¸ è¿ååç±»", callback_data=f"cat:{product.get('category')}"),
-            InlineKeyboardButton("ð  é¦é¡µ", callback_data="home"),
+            InlineKeyboardButton("⬅️ 返回分类", callback_data=f"cat:{product.get('category')}"),
+            InlineKeyboardButton("🏠 首页", callback_data="home"),
         ],
     ])
 
@@ -625,7 +544,7 @@ async def send_product_to_user(target, product):
     await chat.send_message(text=text, reply_markup=keyboard)
 
 
-# -------------------- éç¥ --------------------
+# -------------------- 通知 --------------------
 
 async def notify_admins(context, text):
     for admin_id in ADMIN_IDS:
@@ -655,12 +574,12 @@ def notify_admins_sync(text):
             pass
 
 
-# -------------------- ç¨æ·å½ä»¤ --------------------
+# -------------------- 用户命令 --------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
 
-    # åååäº«æ·±é¾æ¥ï¼/start product_123
+    # 商品分享深链接：/start product_123
     args = context.args or []
     if args and args[0].startswith("product_"):
         try:
@@ -675,48 +594,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             await update.message.reply_text(
-                "ååä¸å­å¨æå·²ä¸æ¶ã",
+                "商品不存在或已下架。",
                 reply_markup=main_menu(update.effective_user.id),
             )
             return
 
     await update.message.reply_text(
-        "ð æ¬¢è¿ä½¿ç¨ååç®å½\n\nè¯·éæ©åè½ï¼",
+        "👋 欢迎使用商品目录\n\n请选择功能：",
         reply_markup=main_menu(update.effective_user.id),
-    )
-
-
-async def upload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ç®¡çåå¿«æ·è¿å¥ 93 åå ZIP å¯¼å¥æµç¨ã"""
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("æ æéã")
-        return
-    clear_state(context)
-    context.user_data["state"] = "zip_import"
-    await update.message.reply_text(
-        "ð¦ ä¸é®ä¸ä¼ åå+å¾ç\n\n"
-        "è¯·åé ZIP æä»¶ã\n\n"
-        "è¦æ±ï¼\n"
-        "â¢ 1 ä¸ª CSV\n"
-        "â¢ 93 è¡åå\n"
-        "â¢ 93 å¼ å¾ç\n"
-        "â¢ å¾çå½å 01.jpg ï½ 93.jpgï¼æ¯æ jpg/jpeg/png/webpï¼\n"
-        "â¢ CSV ç¬¬1è¡å¯¹åºå¾ç01ï¼ç¬¬93è¡å¯¹åºå¾ç93\n\n"
-        "åé /cancel å¯åæ¶ã"
     )
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
-    await update.message.reply_text("å·²åæ¶å½åæä½ã", reply_markup=main_menu(update.effective_user.id))
+    await update.message.reply_text("已取消当前操作。", reply_markup=main_menu(update.effective_user.id))
 
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("æ æéã")
+        await update.message.reply_text("无权限。")
         return
     clear_state(context)
-    await update.message.reply_text("âï¸ ç®¡çåå°", reply_markup=admin_menu_keyboard())
+    await update.message.reply_text("⚙️ 管理后台", reply_markup=admin_menu_keyboard())
 
 
 # -------------------- Callback --------------------
@@ -729,18 +628,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "home":
         clear_state(context)
-        await safe_edit(query, "ð æ¬¢è¿ä½¿ç¨ååç®å½\n\nè¯·éæ©åè½ï¼", main_menu(user_id))
+        await safe_edit(query, "👋 欢迎使用商品目录\n\n请选择功能：", main_menu(user_id))
         return
 
     if data == "catalog":
         clear_state(context)
-        await safe_edit(query, "ð åååç±»\n\nè¯·éæ©åç±»ï¼", catalog_keyboard())
+        await safe_edit(query, "📚 商品分类\n\n请选择分类：", catalog_keyboard())
         return
 
     if data == "search":
         clear_state(context)
         context.user_data["state"] = "search"
-        await safe_edit(query, "ð è¯·è¾å¥åååç§°ãç¼å·æå³é®è¯ï¼\n\nåé /cancel å¯åæ¶")
+        await safe_edit(query, "🔎 请输入商品名称、编号或关键词：\n\n发送 /cancel 可取消")
         return
 
     if data.startswith("cat:"):
@@ -750,19 +649,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else "SELECT * FROM products WHERE category=%s AND active=1 ORDER BY id DESC",
             (category,),
         )
-        await safe_edit(query, f"ð {cat_name(category)}\n\nå± {len(products)} ä¸ªåå", products_keyboard(products, "prod:", "catalog"))
+        await safe_edit(query, f"📚 {cat_name(category)}\n\n共 {len(products)} 个商品", products_keyboard(products, "prod:", "catalog"))
         return
 
     if data == "all_products":
         products = fetchall("SELECT * FROM products WHERE active=1 ORDER BY id DESC")
-        await safe_edit(query, f"ð¦ å¨é¨åå\n\nå± {len(products)} ä¸ªåå", products_keyboard(products, "prod:", "catalog"))
+        await safe_edit(query, f"📦 全部商品\n\n共 {len(products)} 个商品", products_keyboard(products, "prod:", "catalog"))
         return
 
     if data.startswith("prod:"):
         pid = int(data.split(":", 1)[1])
         product = product_get(pid)
         if not product or not int(product.get("active", 0) or 0):
-            await safe_edit(query, "ååä¸å­å¨æå·²ä¸æ¶ã", InlineKeyboardMarkup([[InlineKeyboardButton("â¬ï¸ è¿å", callback_data="catalog")]]))
+            await safe_edit(query, "商品不存在或已下架。", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ 返回", callback_data="catalog")]]))
             return
         await send_product_to_user(update, product)
         return
@@ -771,11 +670,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_admin(user_id):
             return
         clear_state(context)
-        await safe_edit(query, "âï¸ ç®¡çåå°", admin_menu_keyboard())
+        await safe_edit(query, "⚙️ 管理后台", admin_menu_keyboard())
         return
 
     if not is_admin(user_id):
-        await safe_edit(query, "æ æéã")
+        await safe_edit(query, "无权限。")
         return
 
     if data.startswith("admin_products:"):
@@ -787,7 +686,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid = int(data.split(":", 1)[1])
         product = product_get(pid)
         if not product:
-            await safe_edit(query, "ååä¸å­å¨ã", InlineKeyboardMarkup([[InlineKeyboardButton("â¬ï¸ ååç®¡ç", callback_data="admin_products:0")]]))
+            await safe_edit(query, "商品不存在。", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ 商品管理", callback_data="admin_products:0")]]))
             return
         await safe_edit(query, product_text(product, True), admin_product_keyboard(product))
         return
@@ -795,40 +694,40 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "admin_add":
         clear_state(context)
         context.user_data["state"] = "add_product"
-        await safe_edit(query, "â æ·»å åå\n\nè¯·åéï¼\nåç§°|ç¼å·|åç±»(c1-c12)|ä»·æ ¼|åºå­|æè¿°\n\nä¾å¦ï¼\nååA|P001|c1|100|20|æµè¯åå")
+        await safe_edit(query, "➕ 添加商品\n\n请发送：\n名称|编号|分类(c1-c12)|价格|库存|描述\n\n例如：\n商品A|P001|c1|100|20|测试商品")
         return
 
     if data.startswith("edit:"):
         pid = int(data.split(":", 1)[1])
         if not product_get(pid):
-            await safe_edit(query, "ååä¸å­å¨ã")
+            await safe_edit(query, "商品不存在。")
             return
         clear_state(context)
         context.user_data["state"] = "edit_product"
         context.user_data["edit_product_id"] = pid
-        await safe_edit(query, "âï¸ ç¼è¾åå\n\nè¯·éæ°åéå®æ´ä¿¡æ¯ï¼\nåç§°|ç¼å·|åç±»(c1-c12)|ä»·æ ¼|åºå­|æè¿°")
+        await safe_edit(query, "✏️ 编辑商品\n\n请重新发送完整信息：\n名称|编号|分类(c1-c12)|价格|库存|描述")
         return
 
     if data.startswith("stock:"):
         pid = int(data.split(":", 1)[1])
         if not product_get(pid):
-            await safe_edit(query, "ååä¸å­å¨ã")
+            await safe_edit(query, "商品不存在。")
             return
         clear_state(context)
         context.user_data["state"] = "stock"
         context.user_data["stock_product_id"] = pid
-        await safe_edit(query, "ð¦ ä¿®æ¹åºå­\n\nè¯·è¾å¥æ°çåºå­æ°éï¼ä¾å¦ï¼100")
+        await safe_edit(query, "📦 修改库存\n\n请输入新的库存数量，例如：100")
         return
 
     if data.startswith("photo:"):
         pid = int(data.split(":", 1)[1])
         if not product_get(pid):
-            await safe_edit(query, "ååä¸å­å¨ã")
+            await safe_edit(query, "商品不存在。")
             return
         clear_state(context)
         context.user_data["state"] = "replace_photo"
         context.user_data["photo_product_id"] = pid
-        await safe_edit(query, "ð¼ï¸ æ´æ¢å¾ç\n\nè¯·åéååå¾çã\nå¦æä¸éè¦æ´æ¢ï¼è¯·åéï¼è·³è¿")
+        await safe_edit(query, "🖼️ 更换图片\n\n请发送商品图片。\n如果不需要更换，请发送：跳过")
         return
 
     if data.startswith("toggle:"):
@@ -845,56 +744,37 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid = int(data.split(":", 1)[1])
         product = product_get(pid)
         if not product:
-            await safe_edit(query, "ååä¸å­å¨ã")
+            await safe_edit(query, "商品不存在。")
             return
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("â ï¸ ç¡®è®¤å é¤", callback_data=f"confirm_delete:{pid}")],
-            [InlineKeyboardButton("åæ¶", callback_data=f"admin_prod:{pid}")],
+            [InlineKeyboardButton("⚠️ 确认删除", callback_data=f"confirm_delete:{pid}")],
+            [InlineKeyboardButton("取消", callback_data=f"admin_prod:{pid}")],
         ])
-        await safe_edit(query, f"ç¡®å®å é¤ååï¼\n\n{product.get('name')} [{product.get('code') or '-'}]", kb)
+        await safe_edit(query, f"确定删除商品？\n\n{product.get('name')} [{product.get('code') or '-'}]", kb)
         return
 
     if data.startswith("confirm_delete:"):
         pid = int(data.split(":", 1)[1])
         product_delete(pid)
-        await safe_edit(query, "ðï¸ ååå·²å é¤ã", InlineKeyboardMarkup([[InlineKeyboardButton("â¬ï¸ ååç®¡ç", callback_data="admin_products:0")]]))
+        await safe_edit(query, "🗑️ 商品已删除。", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ 商品管理", callback_data="admin_products:0")]]))
         return
 
     if data == "bulk_on" or data == "bulk_off":
         active = 1 if data == "bulk_on" else 0
         execute("UPDATE products SET active=1" if active else "UPDATE products SET active=0")
-        await safe_edit(query, "å·²å®æå¨é¨ååç¶ææ´æ°ã", admin_menu_keyboard())
-        return
-
-    if data == "bulk_stock":
-        clear_state(context)
-        context.user_data["state"] = "bulk_stock_import"
-        await safe_edit(
-            query,
-            "ð ä¸é®æ¹éä¿®æ¹åºå­\n\n"
-            "è¯·åéä¸ä¸ª CSV æä»¶ã\n\n"
-            "æ ¼å¼ï¼\n"
-            "code,stock\n"
-            "P001,20\n"
-            "P002,15\n"
-            "P003,30\n\n"
-            "åªä¿®æ¹åºå­ï¼ä¸ä¼ä¿®æ¹åååç§°ãä»·æ ¼ãå¾çãåç±»åä¸ä¸æ¶ç¶æã\n"
-            "ååç¼å·å¿é¡»ä¸ç°æååä¸è´ã\n\n"
-            "ä¹æ¯æä½ åæ¥çå®æ´åå CSVï¼ä½åªè¯»å code å stock ä¸¤åã\n"
-            "åé /cancel å¯åæ¶ã"
-        )
+        await safe_edit(query, "已完成全部商品状态更新。", admin_menu_keyboard())
         return
 
     if data == "admin_csv":
         clear_state(context)
         context.user_data["state"] = "csv_import"
-        await safe_edit(query, "ð¥ åªå¯¼å¥CSV\n\nè¯·æ CSV æä»¶åéå°è¿éã\nå­æ®µï¼name,code,category,price,stock,description")
+        await safe_edit(query, "📥 只导入CSV\n\n请把 CSV 文件发送到这里。\n字段：name,code,category,price,stock,description")
         return
 
     if data == "admin_zip":
         clear_state(context)
         context.user_data["state"] = "zip_import"
-        await safe_edit(query, "ð¦ ä¸é®ä¸ä¼ åå+å¾ç\n\nè¯·åéä¸ä¸ª ZIP æä»¶ã\n\nè¦æ±ï¼\nâ¢ 1 ä¸ª CSV\nâ¢ 93 è¡åå\nâ¢ 93 å¼ å¾ç\nâ¢ å¾çå½å 01.jpg ï½ 93.jpgï¼æ¯æ jpg/jpeg/png/webpï¼\nâ¢ CSV ç¬¬1è¡å¯¹åºå¾ç01ï¼ç¬¬93è¡å¯¹åºå¾ç93")
+        await safe_edit(query, "📦 一键上传商品+图片\n\n请发送一个 ZIP 文件。\n\n要求：\n• 1 个 CSV\n• 93 行商品\n• 93 张图片\n• 图片命名 01.jpg ～ 93.jpg（支持 jpg/jpeg/png/webp）\n• CSV 第1行对应图片01，第93行对应图片93")
         return
 
     if data == "admin_status":
@@ -913,22 +793,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (iid,),
         )
         if not inquiry:
-            await safe_edit(query, "è¯¢ä»·è®°å½ä¸å­å¨ã")
+            await safe_edit(query, "询价记录不存在。")
             return
-        status = "å·²å¤ç" if inquiry.get("status") == "handled" else "å¾å¤ç"
+        status = "已处理" if inquiry.get("status") == "handled" else "待处理"
         text = (
-            f"ð¨ è¯¢ä»· #{iid}\n"
-            f"ç¶æï¼{status}\n"
-            f"ååï¼{inquiry.get('product') or '-'}\n"
-            f"ç¨æ·IDï¼{inquiry.get('user_id') or '-'}\n"
-            f"ç¨æ·åï¼@{inquiry.get('username') or '-'}\n"
-            f"åå®¹ï¼{inquiry.get('message') or '-'}\n"
-            f"æ¶é´ï¼{inquiry.get('created_at') or '-'}"
+            f"📨 询价 #{iid}\n"
+            f"状态：{status}\n"
+            f"商品：{inquiry.get('product') or '-'}\n"
+            f"用户ID：{inquiry.get('user_id') or '-'}\n"
+            f"用户名：@{inquiry.get('username') or '-'}\n"
+            f"内容：{inquiry.get('message') or '-'}\n"
+            f"时间：{inquiry.get('created_at') or '-'}"
         )
         kb = []
         if inquiry.get("status") != "handled":
-            kb.append([InlineKeyboardButton("â æ è®°å·²å¤ç", callback_data=f"handled:{iid}")])
-        kb.append([InlineKeyboardButton("â¬ï¸ è¯¢ä»·è®°å½", callback_data="admin_inquiries:0")])
+            kb.append([InlineKeyboardButton("✅ 标记已处理", callback_data=f"handled:{iid}")])
+        kb.append([InlineKeyboardButton("⬅️ 询价记录", callback_data="admin_inquiries:0")])
         await safe_edit(query, text, InlineKeyboardMarkup(kb))
         return
 
@@ -936,19 +816,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         iid = int(data.split(":", 1)[1])
         p = db_placeholder()
         execute(f"UPDATE inquiries SET status='handled' WHERE id={p}", (iid,))
-        await safe_edit(query, "â å·²æ è®°ä¸ºå·²å¤çã", InlineKeyboardMarkup([[InlineKeyboardButton("â¬ï¸ è¯¢ä»·è®°å½", callback_data="admin_inquiries:0")]]))
+        await safe_edit(query, "✅ 已标记为已处理。", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ 询价记录", callback_data="admin_inquiries:0")]]))
         return
 
     if data.startswith("inq:"):
         pid = int(data.split(":", 1)[1])
         product = product_get(pid)
         if not product or not int(product.get("active", 0) or 0):
-            await safe_edit(query, "ååä¸å­å¨æå·²ä¸æ¶ã")
+            await safe_edit(query, "商品不存在或已下架。")
             return
         clear_state(context)
         context.user_data["state"] = "inquiry"
         context.user_data["inquiry_product_id"] = pid
-        await safe_edit(query, f"ð¬ è¯¢ä»·ï¼{product['name']}\n\nè¯·è¾å¥æ°éãä»·æ ¼è¦æ±æå¶ä»éæ±ã\n\nåé /cancel å¯åæ¶")
+        await safe_edit(query, f"💬 询价：{product['name']}\n\n请输入数量、价格要求或其他需求。\n\n发送 /cancel 可取消")
         return
 
 
@@ -962,17 +842,17 @@ async def show_admin_products(query, page=0):
     )
     rows = []
     for p in products:
-        status = "ð¢" if int(p.get("active", 0) or 0) else "ð´"
+        status = "🟢" if int(p.get("active", 0) or 0) else "🔴"
         rows.append([InlineKeyboardButton(f"{status} {p['name']} [{p.get('code') or '-'}]", callback_data=f"admin_prod:{p['id']}")])
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("â¬ï¸ ä¸ä¸é¡µ", callback_data=f"admin_products:{page - 1}"))
+        nav.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"admin_products:{page - 1}"))
     if (page + 1) * per_page < total:
-        nav.append(InlineKeyboardButton("ä¸ä¸é¡µ â¡ï¸", callback_data=f"admin_products:{page + 1}"))
+        nav.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"admin_products:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("â¬ï¸ ç®¡çåå°", callback_data="admin")])
-    await safe_edit(query, f"ð¦ ååç®¡ç\n\nå± {total} ä¸ªåå\nç¬¬ {page + 1} é¡µ", InlineKeyboardMarkup(rows))
+    rows.append([InlineKeyboardButton("⬅️ 管理后台", callback_data="admin")])
+    await safe_edit(query, f"📦 商品管理\n\n共 {total} 个商品\n第 {page + 1} 页", InlineKeyboardMarkup(rows))
 
 
 async def show_admin_inquiries(query, page=0):
@@ -986,18 +866,18 @@ async def show_admin_inquiries(query, page=0):
     )
     rows = []
     for x in inquiries:
-        status = "â" if x.get("status") == "handled" else "ð "
-        label = f"{status} #{x['id']} {x.get('product') or 'åå'}"
+        status = "✅" if x.get("status") == "handled" else "🟠"
+        label = f"{status} #{x['id']} {x.get('product') or '商品'}"
         rows.append([InlineKeyboardButton(label[:60], callback_data=f"inqadmin:{x['id']}")])
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("â¬ï¸ ä¸ä¸é¡µ", callback_data=f"admin_inquiries:{page - 1}"))
+        nav.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"admin_inquiries:{page - 1}"))
     if (page + 1) * per_page < total:
-        nav.append(InlineKeyboardButton("ä¸ä¸é¡µ â¡ï¸", callback_data=f"admin_inquiries:{page + 1}"))
+        nav.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"admin_inquiries:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("â¬ï¸ ç®¡çåå°", callback_data="admin")])
-    await safe_edit(query, f"ð¨ è¯¢ä»·è®°å½\n\nå± {total} æ¡\nç¬¬ {page + 1} é¡µ", InlineKeyboardMarkup(rows))
+    rows.append([InlineKeyboardButton("⬅️ 管理后台", callback_data="admin")])
+    await safe_edit(query, f"📨 询价记录\n\n共 {total} 条\n第 {page + 1} 页", InlineKeyboardMarkup(rows))
 
 
 async def show_status(query):
@@ -1007,37 +887,37 @@ async def show_status(query):
     inquiries = fetchone("SELECT COUNT(*) AS n FROM inquiries")
     csv_path = BASE_DIR / CSV_FILE
     text = (
-        "ð ç³»ç»ç¶æ\n\n"
-        f"æ°æ®åºï¼{'PostgreSQL' if USE_POSTGRES else 'SQLite'}\n"
-        f"ååæ»æ°ï¼{total}\n"
-        f"ä¸æ¶ååï¼{int(active['n'] or 0)}\n"
-        f"æå¾çååï¼{int(photos['n'] or 0)}\n"
-        f"è¯¢ä»·æ»æ°ï¼{int(inquiries['n'] or 0)}\n"
-        f"CSVï¼{CSV_FILE}\n"
-        f"CSVå­å¨ï¼{'æ¯' if csv_path.exists() else 'å¦'}\n"
-        f"Webï¼{WEB_URL}\n"
-        f"PORTï¼{PORT}"
+        "📊 系统状态\n\n"
+        f"数据库：{'PostgreSQL' if USE_POSTGRES else 'SQLite'}\n"
+        f"商品总数：{total}\n"
+        f"上架商品：{int(active['n'] or 0)}\n"
+        f"有图片商品：{int(photos['n'] or 0)}\n"
+        f"询价总数：{int(inquiries['n'] or 0)}\n"
+        f"CSV：{CSV_FILE}\n"
+        f"CSV存在：{'是' if csv_path.exists() else '否'}\n"
+        f"Web：{WEB_URL}\n"
+        f"PORT：{PORT}"
     )
-    await safe_edit(query, text, InlineKeyboardMarkup([[InlineKeyboardButton("â¬ï¸ ç®¡çåå°", callback_data="admin")]]))
+    await safe_edit(query, text, InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ 管理后台", callback_data="admin")]]))
 
 
-# -------------------- ææ¬è¾å¥ --------------------
+# -------------------- 文本输入 --------------------
 
 def parse_product_line(text):
     parts = [x.strip() for x in text.split("|")]
     if len(parts) < 6:
-        raise ValueError("æ ¼å¼ä¸æ­£ç¡®ï¼å¿é¡»æ¯ï¼åç§°|ç¼å·|åç±»|ä»·æ ¼|åºå­|æè¿°")
+        raise ValueError("格式不正确，必须是：名称|编号|分类|价格|库存|描述")
     name, code, category, price, stock_text, description = parts[:6]
     if not name:
-        raise ValueError("åååç§°ä¸è½ä¸ºç©º")
+        raise ValueError("商品名称不能为空")
     if category not in CATEGORIES:
-        raise ValueError("åç±»å¿é¡»æ¯ c1-c12")
+        raise ValueError("分类必须是 c1-c12")
     try:
         stock = int(stock_text)
     except ValueError:
-        raise ValueError("åºå­å¿é¡»æ¯æ´æ°")
+        raise ValueError("库存必须是整数")
     if stock < 0:
-        raise ValueError("åºå­ä¸è½å°äº0")
+        raise ValueError("库存不能小于0")
     return name, code, category, price, stock, description
 
 
@@ -1064,9 +944,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         clear_state(context)
         if not products:
-            await update.message.reply_text("æ²¡ææ¾å°ååã", reply_markup=main_menu(user_id))
+            await update.message.reply_text("没有找到商品。", reply_markup=main_menu(user_id))
         else:
-            await update.message.reply_text(f"ð æ¾å° {len(products)} ä¸ªååï¼", reply_markup=products_keyboard(products, "prod:", "home"))
+            await update.message.reply_text(f"🔎 找到 {len(products)} 个商品：", reply_markup=products_keyboard(products, "prod:", "home"))
         return
 
     if not is_admin(user_id):
@@ -1075,7 +955,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             product = product_get(pid) if pid else None
             if not product:
                 clear_state(context)
-                await update.message.reply_text("ååä¸å­å¨ã", reply_markup=main_menu(user_id))
+                await update.message.reply_text("商品不存在。", reply_markup=main_menu(user_id))
                 return
             username = update.effective_user.username or ""
             if USE_POSTGRES:
@@ -1093,26 +973,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     (str(user_id), username, f"{product['name']} [{product.get('code') or '-'}]", text, "pending", now_text()),
                 ))
             notify_text = (
-                f"ð¨ æ°è¯¢ä»· #{inquiry_id}\n"
-                f"ååï¼{product['name']} [{product.get('code') or '-'}]\n"
-                f"ç¨æ·IDï¼{user_id}\n"
-                f"ç¨æ·åï¼@{username or '-'}\n"
-                f"åå®¹ï¼{text}"
+                f"📨 新询价 #{inquiry_id}\n"
+                f"商品：{product['name']} [{product.get('code') or '-'}]\n"
+                f"用户ID：{user_id}\n"
+                f"用户名：@{username or '-'}\n"
+                f"内容：{text}"
             )
             await notify_admins(context, notify_text)
             clear_state(context)
             await update.message.reply_text(
-                f"â è¯¢ä»·å·²æäº¤ã\nå®¢æï¼@{SERVICE_USERNAME}",
+                f"✅ 询价已提交。\n客服：@{SERVICE_USERNAME}",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("ð¬ å®¢æç´è¾¾", url=f"https://t.me/{SERVICE_USERNAME}")],
-                    [InlineKeyboardButton("ð  è¿åä¸»èå", callback_data="home")],
+                    [InlineKeyboardButton("💬 客服直达", url=f"https://t.me/{SERVICE_USERNAME}")],
+                    [InlineKeyboardButton("🏠 返回主菜单", callback_data="home")],
                 ]),
             )
         else:
-            await update.message.reply_text("è¯·éæ©èååè½ã", reply_markup=main_menu(user_id))
+            await update.message.reply_text("请选择菜单功能。", reply_markup=main_menu(user_id))
         return
 
-    # ç®¡çåç¶æ
+    # 管理员状态
     if state == "add_product":
         try:
             name, code, category, price, stock, description = parse_product_line(text)
@@ -1120,35 +1000,35 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clear_state(context)
             context.user_data["state"] = "add_photo"
             context.user_data["pending_product_id"] = pid
-            await update.message.reply_text("ååå·²åå»ºã\n\nè¯·åéååå¾çã\nå¦æä¸éè¦å¾çï¼è¯·åéï¼è·³è¿")
+            await update.message.reply_text("商品已创建。\n\n请发送商品图片。\n如果不需要图片，请发送：跳过")
         except Exception as exc:
-            await update.message.reply_text(f"â {exc}\n\nè¯·éæ°åéæ­£ç¡®æ ¼å¼ã")
+            await update.message.reply_text(f"❌ {exc}\n\n请重新发送正确格式。")
         return
 
     if state == "add_photo":
-        if text == "è·³è¿":
+        if text == "跳过":
             pid = context.user_data.get("pending_product_id")
             clear_state(context)
             product = product_get(pid) if pid else None
-            await update.message.reply_text("å·²è·³è¿å¾çã", reply_markup=admin_product_keyboard(product) if product else admin_menu_keyboard())
+            await update.message.reply_text("已跳过图片。", reply_markup=admin_product_keyboard(product) if product else admin_menu_keyboard())
             return
-        await update.message.reply_text("è¯·åéååå¾çï¼æèåéï¼è·³è¿")
+        await update.message.reply_text("请发送商品图片，或者发送：跳过")
         return
 
     if state == "edit_product":
         pid = context.user_data.get("edit_product_id")
         if not pid or not product_get(pid):
             clear_state(context)
-            await update.message.reply_text("ååä¸å­å¨ã", reply_markup=admin_menu_keyboard())
+            await update.message.reply_text("商品不存在。", reply_markup=admin_menu_keyboard())
             return
         try:
             name, code, category, price, stock, description = parse_product_line(text)
             product_update(pid, name, code, category, price, stock, description)
             product = product_get(pid)
             clear_state(context)
-            await update.message.reply_text("â ååå·²æ´æ°ã", reply_markup=admin_product_keyboard(product))
+            await update.message.reply_text("✅ 商品已更新。", reply_markup=admin_product_keyboard(product))
         except Exception as exc:
-            await update.message.reply_text(f"â {exc}\n\nè¯·éæ°åéå®æ´ä¿¡æ¯ã")
+            await update.message.reply_text(f"❌ {exc}\n\n请重新发送完整信息。")
         return
 
     if state == "stock":
@@ -1160,28 +1040,28 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             product_set_stock(pid, stock)
             product = product_get(pid)
             clear_state(context)
-            await update.message.reply_text("â åºå­å·²ä¿®æ¹ã", reply_markup=admin_product_keyboard(product))
+            await update.message.reply_text("✅ 库存已修改。", reply_markup=admin_product_keyboard(product))
         except Exception:
-            await update.message.reply_text("â åºå­å¿é¡»æ¯ 0 æä»¥ä¸çæ´æ°ï¼è¯·éæ°è¾å¥ã")
+            await update.message.reply_text("❌ 库存必须是 0 或以上的整数，请重新输入。")
         return
 
     if state == "replace_photo":
-        if text == "è·³è¿":
+        if text == "跳过":
             pid = context.user_data.get("photo_product_id")
             product = product_get(pid) if pid else None
             clear_state(context)
-            await update.message.reply_text("å·²åæ¶æ´æ¢å¾çã", reply_markup=admin_product_keyboard(product) if product else admin_menu_keyboard())
+            await update.message.reply_text("已取消更换图片。", reply_markup=admin_product_keyboard(product) if product else admin_menu_keyboard())
         else:
-            await update.message.reply_text("è¯·åéååå¾çï¼æèåéï¼è·³è¿")
+            await update.message.reply_text("请发送商品图片，或者发送：跳过")
         return
 
     if state == "inquiry":
-        # ç®¡çåä¹åè®¸æ­£å¸¸æäº¤è¯¢ä»·
+        # 管理员也允许正常提交询价
         pid = context.user_data.get("inquiry_product_id")
         product = product_get(pid) if pid else None
         if not product:
             clear_state(context)
-            await update.message.reply_text("ååä¸å­å¨ã", reply_markup=admin_menu_keyboard())
+            await update.message.reply_text("商品不存在。", reply_markup=admin_menu_keyboard())
             return
         username = update.effective_user.username or ""
         if USE_POSTGRES:
@@ -1198,15 +1078,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    VALUES (?,?,?,?,?,?)""",
                 (str(user_id), username, f"{product['name']} [{product.get('code') or '-'}]", text, "pending", now_text()),
             ))
-        await notify_admins(context, f"ð¨ æ°è¯¢ä»· #{inquiry_id}\nååï¼{product['name']}\nç¨æ·IDï¼{user_id}\nåå®¹ï¼{text}")
+        await notify_admins(context, f"📨 新询价 #{inquiry_id}\n商品：{product['name']}\n用户ID：{user_id}\n内容：{text}")
         clear_state(context)
-        await update.message.reply_text("â è¯¢ä»·å·²æäº¤ã", reply_markup=main_menu(user_id))
+        await update.message.reply_text("✅ 询价已提交。", reply_markup=main_menu(user_id))
         return
 
-    await update.message.reply_text("è¯·éæ©èååè½ã", reply_markup=admin_menu_keyboard())
+    await update.message.reply_text("请选择菜单功能。", reply_markup=admin_menu_keyboard())
 
 
-# -------------------- å¾ç / æä»¶ --------------------
+# -------------------- 图片 / 文件 --------------------
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -1226,7 +1106,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product = product_get(pid)
     clear_state(context)
     if product:
-        await update.effective_chat.send_message("â å¾çå·²ä¿å­ï¼ä¸ä¼ å¾çæ¶æ¯å·²å°è¯èªå¨å é¤ã", reply_markup=admin_product_keyboard(product))
+        await update.effective_chat.send_message("✅ 图片已保存，上传图片消息已尝试自动删除。", reply_markup=admin_product_keyboard(product))
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1239,7 +1119,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
     if filename.lower().endswith(".zip"):
         if state != "zip_import":
-            await update.message.reply_text("è¯·åå¨ç®¡çåå°ç¹å»âð¦ ä¸é®ä¸ä¼ åå+å¾çâï¼ååé ZIPã")
+            await update.message.reply_text("请先在管理后台点击“📦 一键上传商品+图片”，再发送 ZIP。")
             return
         await process_zip(update, context, doc)
         return
@@ -1255,32 +1135,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             await safe_delete_message(update.message)
             clear_state(context)
-            await update.effective_chat.send_message(f"â CSV å¯¼å¥å®æï¼å±å¤ç {count} è¡ã", reply_markup=admin_menu_keyboard())
+            await update.effective_chat.send_message(f"✅ CSV 导入完成，共处理 {count} 行。", reply_markup=admin_menu_keyboard())
         except Exception as exc:
-            await update.message.reply_text(f"â CSV å¯¼å¥å¤±è´¥ï¼{exc}")
-        return
-    if state == "bulk_stock_import" and filename.lower().endswith(".csv"):
-        temp_path = UPLOAD_DIR / f"bulk_stock_{update.effective_user.id}_{doc.file_unique_id}.csv"
-        try:
-            tg_file = await context.bot.get_file(doc.file_id)
-            await tg_file.download_to_drive(custom_path=str(temp_path))
-            count = bulk_update_stock_from_csv(temp_path)
-            await safe_delete_message(update.message)
-            clear_state(context)
-            await update.effective_chat.send_message(
-                f"â æ¹éä¿®æ¹åºå­å®æï¼\n\næåæ´æ°ï¼{count} ä¸ªåå\n\n"
-                "åååç§°ãä»·æ ¼ãå¾çãåç±»åä¸ä¸æ¶ç¶æåæªä¿®æ¹ã",
-                reply_markup=admin_menu_keyboard(),
-            )
-        except Exception as exc:
-            print(f"æ¹éä¿®æ¹åºå­å¤±è´¥ï¼{type(exc).__name__}: {exc}")
-            traceback.print_exc()
-            await update.message.reply_text(f"â æ¹éä¿®æ¹åºå­å¤±è´¥ï¼\n{type(exc).__name__}: {exc}")
-        finally:
-            try:
-                temp_path.unlink()
-            except Exception:
-                pass
+            await update.message.reply_text(f"❌ CSV 导入失败：{exc}")
         return
     if state in ("add_photo", "replace_photo") and Path(filename).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
         pid = context.user_data.get("pending_product_id") if state == "add_photo" else context.user_data.get("photo_product_id")
@@ -1289,7 +1146,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_delete_message(update.message)
             product = product_get(pid)
             clear_state(context)
-            await update.effective_chat.send_message("â å¾çå·²ä¿å­ï¼ä¸ä¼ å¾çæ¶æ¯å·²å°è¯èªå¨å é¤ã", reply_markup=admin_product_keyboard(product))
+            await update.effective_chat.send_message("✅ 图片已保存，上传图片消息已尝试自动删除。", reply_markup=admin_product_keyboard(product))
 
 
 async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
@@ -1310,19 +1167,19 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                 if ext in {".jpg", ".jpeg", ".png", ".webp"} and re.fullmatch(r"\d{2}", stem):
                     image_members.append(m)
             if len(csv_members) != 1:
-                raise ValueError(f"ZIP å¿é¡»ä¸åªè½æ 1 ä¸ª CSVï¼ç®åæ {len(csv_members)} ä¸ª")
+                raise ValueError(f"ZIP 必须且只能有 1 个 CSV，目前有 {len(csv_members)} 个")
             if len(image_members) != 93:
-                raise ValueError(f"ZIP å¿é¡»æ 93 å¼ å½åä¸º 01-93 çå¾çï¼ç®åæ£æµå° {len(image_members)} å¼ ")
+                raise ValueError(f"ZIP 必须有 93 张命名为 01-93 的图片，目前检测到 {len(image_members)} 张")
             image_map = {}
             for m in image_members:
                 num = int(Path(m).stem)
                 if not 1 <= num <= 93:
-                    raise ValueError(f"å¾çç¼å·è¶åºèå´ï¼{m}")
+                    raise ValueError(f"图片编号超出范围：{m}")
                 if num in image_map:
-                    raise ValueError(f"å¾çç¼å·éå¤ï¼{num:02d}")
+                    raise ValueError(f"图片编号重复：{num:02d}")
                 image_map[num] = m
             if len(image_map) != 93:
-                raise ValueError("å¾çå¿é¡»å®æ´è¦ç 01-93")
+                raise ValueError("图片必须完整覆盖 01-93")
             csv_data = z.read(csv_members[0])
             csv_text = None
             for enc in ("utf-8-sig", "utf-8", "gb18030"):
@@ -1332,15 +1189,15 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                 except UnicodeDecodeError:
                     pass
             if csv_text is None:
-                raise ValueError("æ æ³è¯å« CSV ç¼ç ")
+                raise ValueError("无法识别 CSV 编码")
             reader = csv.DictReader(io.StringIO(csv_text))
             if not reader.fieldnames:
-                raise ValueError("CSV æ²¡æè¡¨å¤´")
+                raise ValueError("CSV 没有表头")
             fields = {str(x).strip().lower(): x for x in reader.fieldnames if x}
             required = ["name", "code", "category", "price", "stock"]
             missing = [x for x in required if x not in fields]
             if missing:
-                raise ValueError("CSV ç¼ºå°å­æ®µï¼" + ", ".join(missing))
+                raise ValueError("CSV 缺少字段：" + ", ".join(missing))
             rows = []
             for raw in reader:
                 row = {}
@@ -1348,26 +1205,26 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                     row[key] = raw.get(original, "")
                 rows.append(row)
             if len(rows) != 93:
-                raise ValueError(f"CSV å¿é¡»æ­£å¥½ 93 è¡ï¼ç®åæ¯ {len(rows)} è¡")
+                raise ValueError(f"CSV 必须正好 93 行，目前是 {len(rows)} 行")
 
-            # ä¸¥æ ¼æ ¡éª CSV ç¬¬1~93è¡å¿é¡»å¯¹åº P001~P093ï¼é¿åå¾çééã
+            # 严格校验 CSV 第1~93行必须对应 P001~P093，避免图片错配。
             for index, row in enumerate(rows, start=1):
                 expected_code = f"P{index:03d}"
                 actual_code = str(row.get("code", "")).strip().upper()
                 if actual_code != expected_code:
                     raise ValueError(
-                        f"CSV ç¬¬ {index} è¡ç¼å·åºä¸º {expected_code}ï¼å®éä¸º {actual_code or 'ç©º'}"
+                        f"CSV 第 {index} 行编号应为 {expected_code}，实际为 {actual_code or '空'}"
                     )
                 if not str(row.get("name", "")).strip():
-                    raise ValueError(f"CSV ç¬¬ {index} è¡åååç§°ä¸ºç©º")
+                    raise ValueError(f"CSV 第 {index} 行商品名称为空")
                 normalized_category = normalize_category(row.get("category", ""))
                 if normalized_category not in CATEGORIES:
                     raise ValueError(
-                        f"CSV ç¬¬ {index} è¡åç±»æ æï¼{row.get('category', '')}ï¼æ¯æ c1-c12 æä¸­æåç±»åç§°"
+                        f"CSV 第 {index} 行分类无效：{row.get('category', '')}；支持 c1-c12 或中文分类名称"
                     )
                 row["category"] = normalized_category
 
-            await update.effective_chat.send_message("â³ å·²éªè¯ ZIPï¼1ä¸ªCSV + 93å¼ å¾çãå¼å§å¯¼å¥ï¼è¯·ç¨åâ¦")
+            await update.effective_chat.send_message("⏳ 已验证 ZIP：1个CSV + 93张图片。开始导入，请稍候…")
             for index, row in enumerate(rows, start=1):
                 temp_image = temp_dir / f"{index:02d}{Path(image_map[index]).suffix.lower()}"
                 temp_image.write_bytes(z.read(image_map[index]))
@@ -1380,7 +1237,7 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                         sent = await context.bot.send_document(chat_id=ADMIN_IDS[0], document=f)
                         photo_id = sent.document.file_id if sent.document else None
                 if not photo_id:
-                    raise ValueError(f"ç¬¬ {index} å¼ å¾çæ æ³åå¾ Telegram file_id")
+                    raise ValueError(f"第 {index} 张图片无法取得 Telegram file_id")
                 try:
                     await context.bot.delete_message(chat_id=ADMIN_IDS[0], message_id=sent.message_id)
                 except Exception:
@@ -1391,17 +1248,17 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
                 except Exception:
                     pass
                 if index % 10 == 0 or index == 93:
-                    await update.effective_chat.send_message(f"â³ å·²å®æ {index}/93")
+                    await update.effective_chat.send_message(f"⏳ 已完成 {index}/93")
 
         clear_state(context)
-        await update.effective_chat.send_message("â 93ä¸ªåå + 93å¼ å¾çå¨é¨å¯¼å¥å®æã", reply_markup=admin_menu_keyboard())
+        await update.effective_chat.send_message("✅ 93个商品 + 93张图片全部导入完成。", reply_markup=admin_menu_keyboard())
     except Exception as exc:
         clear_state(context)
         error_text = f"{type(exc).__name__}: {exc}"
-        print(f"ZIP å¯¼å¥å¤±è´¥ï¼{error_text}")
+        print(f"ZIP 导入失败：{error_text}")
         traceback.print_exc()
         await update.effective_chat.send_message(
-            f"â ZIP å¯¼å¥å¤±è´¥ï¼\n{error_text}",
+            f"❌ ZIP 导入失败：\n{error_text}",
             reply_markup=admin_menu_keyboard(),
         )
     finally:
@@ -1576,11 +1433,11 @@ class CatalogHandler(BaseHTTPRequestHandler):
             pid = 0
         product = product_get(pid) if pid else None
         if not product:
-            self.send_json({"ok": False, "error": "ååä¸å­å¨"}, 404)
+            self.send_json({"ok": False, "error": "商品不存在"}, 404)
             return
         message = str(payload.get("message", "")).strip()
         if not message:
-            self.send_json({"ok": False, "error": "è¯·å¡«åè¯¢ä»·åå®¹"}, 400)
+            self.send_json({"ok": False, "error": "请填写询价内容"}, 400)
             return
         user_id = str(payload.get("user_id", "web"))
         username = str(payload.get("username", "web"))
@@ -1601,12 +1458,12 @@ class CatalogHandler(BaseHTTPRequestHandler):
             ))
         contact = str(payload.get("contact", "")).strip()
         notify = (
-            f"ð¨ Webæ°è¯¢ä»· #{inquiry_id}\n"
-            f"ååï¼{product_name}\n"
-            f"ç¨æ·ï¼{username}\n"
-            f"ç¨æ·IDï¼{user_id}\n"
-            f"èç³»æ¹å¼ï¼{contact or '-'}\n"
-            f"åå®¹ï¼{message}"
+            f"📨 Web新询价 #{inquiry_id}\n"
+            f"商品：{product_name}\n"
+            f"用户：{username}\n"
+            f"用户ID：{user_id}\n"
+            f"联系方式：{contact or '-'}\n"
+            f"内容：{message}"
         )
         threading.Thread(target=notify_admins_sync, args=(notify,), daemon=True).start()
         self.send_json({"ok": True, "inquiry_id": inquiry_id})
@@ -1620,7 +1477,7 @@ def start_web_server():
     return server
 
 
-# -------------------- å¯å¨ --------------------
+# -------------------- 启动 --------------------
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     error = context.error
