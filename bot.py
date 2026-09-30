@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+import asyncio
 
 from dotenv import load_dotenv
 
@@ -1472,11 +1473,43 @@ class CatalogHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, 500)
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        if parsed.path != "/api/inquiry":
-            self.send_json({"ok": False, "error": "Not Found"}, 404)
-            return
+  def do_POST(self):
+    parsed = urlparse(self.path)
+
+    # Telegram Webhook
+    if parsed.path == "/telegram":
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+
+            update = Update.de_json(payload, self.server.bot)
+
+            # 把 Telegram 更新交给 python-telegram-bot 的事件循环处理
+            asyncio.run_coroutine_threadsafe(
+                self.server.application.process_update(update),
+                self.server.loop,
+            )
+
+            self.send_json({"ok": True})
+        except Exception as exc:
+            print(f"Telegram Webhook error: {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            self.send_json({"ok": False, "error": str(exc)}, 500)
+        return
+
+    # Mini App 询价
+    if parsed.path != "/api/inquiry":
+        self.send_json({"ok": False, "error": "Not Found"}, 404)
+        return
+
+    try:
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length)
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        self.api_inquiry(payload)
+    except Exception as exc:
+        self.send_json({"ok": False, "error": str(exc)}, 400)
         try:
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -1627,11 +1660,23 @@ class CatalogHandler(BaseHTTPRequestHandler):
         self.send_json({"ok": True, "inquiry_id": inquiry_id})
 
 
-def start_web_server():
+def start_web_server(application, loop):
     server = ThreadingHTTPServer(("0.0.0.0", PORT), CatalogHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+
+    # 给 Webhook Handler 使用
+    server.application = application
+    server.loop = loop
+    server.bot = application.bot
+
+    thread = threading.Thread(
+        target=server.serve_forever,
+        daemon=True,
+    )
     thread.start()
+
     print(f"Web server listening on 0.0.0.0:{PORT}")
+    print(f"Telegram webhook: {WEB_URL}/telegram")
+
     return server
 
 
