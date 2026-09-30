@@ -16,7 +16,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-import asyncio
 
 from dotenv import load_dotenv
 
@@ -60,7 +59,6 @@ CATEGORIES = {
     "c12": "白皮系列",
 }
 
-
 def parse_admin_ids(raw: str):
     parts = re.split(r"[,;\s]+", raw.strip()) if raw.strip() else []
     ids = []
@@ -71,7 +69,6 @@ def parse_admin_ids(raw: str):
             ids.append(int(item))
     return ids
 
-
 ADMIN_IDS = parse_admin_ids(os.getenv("ADMIN_IDS", ""))
 USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
 DB_PATH = BASE_DIR / "bot.db"
@@ -81,12 +78,10 @@ if not BOT_TOKEN:
 if not ADMIN_IDS:
     raise RuntimeError("缺少有效的 ADMIN_IDS。请填写 Telegram 数字用户ID，不要填写 @用户名")
 
-
 # -------------------- 数据库 --------------------
 
 def now_text():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
 
 def db_connect():
     if USE_POSTGRES:
@@ -99,7 +94,6 @@ def db_connect():
     conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def db_init():
     conn = db_connect()
@@ -193,7 +187,6 @@ def db_init():
     finally:
         conn.close()
 
-
 def fetchall(sql, params=()):
     conn = db_connect()
     try:
@@ -203,7 +196,6 @@ def fetchall(sql, params=()):
         return [dict(r) if not isinstance(r, dict) else r for r in rows]
     finally:
         conn.close()
-
 
 def fetchone(sql, params=()):
     conn = db_connect()
@@ -216,7 +208,6 @@ def fetchone(sql, params=()):
         return dict(row) if not isinstance(row, dict) else row
     finally:
         conn.close()
-
 
 def execute(sql, params=(), returning=False):
     conn = db_connect()
@@ -235,20 +226,16 @@ def execute(sql, params=(), returning=False):
     finally:
         conn.close()
 
-
 def db_placeholder():
     return "%s" if USE_POSTGRES else "?"
-
 
 def product_count():
     row = fetchone("SELECT COUNT(*) AS n FROM products")
     return int(row["n"] or 0)
 
-
 def product_get(product_id):
     p = db_placeholder()
     return fetchone(f"SELECT * FROM products WHERE id={p}", (product_id,))
-
 
 def product_create(name, code, category, price, stock, description, active=1, photo_id=None):
     created = now_text()
@@ -268,7 +255,6 @@ def product_create(name, code, category, price, stock, description, active=1, ph
         (name, code, category, price, stock, description, active, photo_id, created),
     ))
 
-
 def product_update(product_id, name, code, category, price, stock, description):
     p = db_placeholder()
     execute(
@@ -277,16 +263,13 @@ def product_update(product_id, name, code, category, price, stock, description):
         (name, code, category, price, stock, description, product_id),
     )
 
-
 def product_set_photo(product_id, photo_id):
     p = db_placeholder()
     execute(f"UPDATE products SET photo_id={p} WHERE id={p}", (photo_id, product_id))
 
-
 def product_set_stock(product_id, stock):
     p = db_placeholder()
     execute(f"UPDATE products SET stock={p} WHERE id={p}", (stock, product_id))
-
 
 def bulk_update_stock_from_csv(path):
     """按商品编号批量更新库存。支持 UTF-8/UTF-8-SIG/GB18030。
@@ -367,16 +350,13 @@ def bulk_update_stock_from_csv(path):
     finally:
         conn.close()
 
-
 def product_set_active(product_id, active):
     p = db_placeholder()
     execute(f"UPDATE products SET active={p} WHERE id={p}", (active, product_id))
 
-
 def product_delete(product_id):
     p = db_placeholder()
     execute(f"DELETE FROM products WHERE id={p}", (product_id,))
-
 
 def normalize_category(value):
     """支持 c1-c12 和 CSV 中的中文分类名称。"""
@@ -392,7 +372,6 @@ def normalize_category(value):
         "分类九": "c9", "分类十": "c10", "分类十一": "c11", "分类十二": "c12",
     }
     return old_map.get(raw, "")
-
 
 def product_upsert(row, photo_id=None):
     name = str(row.get("name", "")).strip()
@@ -497,23 +476,19 @@ def read_csv_rows(path):
         rows.append(row)
     return rows
 
-
 def import_csv_file(path):
     rows = read_csv_rows(path)
     for row in rows:
         product_upsert(row)
     return len(rows)
 
-
 # -------------------- Telegram 辅助 --------------------
 
 def is_admin(user_id):
     return int(user_id) in ADMIN_IDS
 
-
 def cat_name(code):
     return CATEGORIES.get(code, code or "未分类")
-
 
 def product_text(product, admin=False):
     status = "🟢 上架" if int(product.get("active", 0) or 0) else "🔴 下架"
@@ -533,7 +508,6 @@ def product_text(product, admin=False):
         text += f"ID：{product.get('id')}"
     return text
 
-
 def main_menu(user_id):
     rows = [
         [InlineKeyboardButton("📚 商品目录", callback_data="catalog")],
@@ -545,7 +519,6 @@ def main_menu(user_id):
         rows.append([InlineKeyboardButton("⚙️ 管理后台", callback_data="admin")])
     return InlineKeyboardMarkup(rows)
 
-
 def catalog_keyboard():
     rows = []
     keys = list(CATEGORIES.items())
@@ -555,7 +528,6 @@ def catalog_keyboard():
     rows.append([InlineKeyboardButton("📦 全部商品", callback_data="all_products")])
     rows.append([InlineKeyboardButton("⬅️ 返回", callback_data="home")])
     return InlineKeyboardMarkup(rows)
-
 
 def products_keyboard(products, prefix="prod:", back="catalog"):
     rows = []
@@ -567,7 +539,6 @@ def products_keyboard(products, prefix="prod:", back="catalog"):
     rows.append([InlineKeyboardButton("⬅️ 返回", callback_data=back)])
     return InlineKeyboardMarkup(rows)
 
-
 def admin_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 商品管理", callback_data="admin_products:0"), InlineKeyboardButton("➕ 添加商品", callback_data="admin_add")],
@@ -577,7 +548,6 @@ def admin_menu_keyboard():
         [InlineKeyboardButton("🟢 全部上架", callback_data="bulk_on"), InlineKeyboardButton("🔴 全部下架", callback_data="bulk_off")],
         [InlineKeyboardButton("⬅️ 返回主菜单", callback_data="home")],
     ])
-
 
 def product_share_url(product):
     pid = int(product["id"])
@@ -589,7 +559,6 @@ def product_share_url(product):
         + "&text="
         + quote(share_text, safe="")
     )
-
 
 def admin_product_keyboard(product):
     pid = product["id"]
@@ -603,7 +572,6 @@ def admin_product_keyboard(product):
         [InlineKeyboardButton("⬅️ 商品管理", callback_data="admin_products:0")],
     ])
 
-
 def clear_state(context):
     for key in [
         "state", "pending_product_id", "edit_product_id", "stock_product_id",
@@ -611,13 +579,11 @@ def clear_state(context):
     ]:
         context.user_data.pop(key, None)
 
-
 async def safe_delete_message(message):
     try:
         await message.delete()
     except Exception:
         pass
-
 
 async def safe_edit(query, text, reply_markup=None):
     try:
@@ -627,7 +593,6 @@ async def safe_edit(query, text, reply_markup=None):
             await query.message.reply_text(text, reply_markup=reply_markup)
         except Exception:
             pass
-
 
 async def send_product_to_user(target, product):
     """发送商品详情；target 可以是 Update 或 Message。"""
@@ -660,7 +625,6 @@ async def send_product_to_user(target, product):
             pass
     await chat.send_message(text=text, reply_markup=keyboard)
 
-
 # -------------------- 通知 --------------------
 
 async def notify_admins(context, text):
@@ -669,7 +633,6 @@ async def notify_admins(context, text):
             await context.bot.send_message(chat_id=admin_id, text=text)
         except Exception:
             pass
-
 
 def telegram_api(method, params):
     data = json.dumps(params).encode("utf-8")
@@ -682,14 +645,12 @@ def telegram_api(method, params):
     with urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
-
 def notify_admins_sync(text):
     for admin_id in ADMIN_IDS:
         try:
             telegram_api("sendMessage", {"chat_id": admin_id, "text": text})
         except Exception:
             pass
-
 
 # -------------------- 用户命令 --------------------
 
@@ -721,11 +682,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_menu(update.effective_user.id),
     )
 
-
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
     await update.message.reply_text("已取消当前操作。", reply_markup=main_menu(update.effective_user.id))
-
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -733,7 +692,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     clear_state(context)
     await update.message.reply_text("⚙️ 管理后台", reply_markup=admin_menu_keyboard())
-
 
 # -------------------- Callback --------------------
 
@@ -967,7 +925,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, f"💬 询价：{product['name']}\n\n请输入数量、价格要求或其他需求。\n\n发送 /cancel 可取消")
         return
 
-
 async def show_admin_products(query, page=0):
     per_page = 10
     total = product_count()
@@ -989,7 +946,6 @@ async def show_admin_products(query, page=0):
         rows.append(nav)
     rows.append([InlineKeyboardButton("⬅️ 管理后台", callback_data="admin")])
     await safe_edit(query, f"📦 商品管理\n\n共 {total} 个商品\n第 {page + 1} 页", InlineKeyboardMarkup(rows))
-
 
 async def show_admin_inquiries(query, page=0):
     per_page = 10
@@ -1015,7 +971,6 @@ async def show_admin_inquiries(query, page=0):
     rows.append([InlineKeyboardButton("⬅️ 管理后台", callback_data="admin")])
     await safe_edit(query, f"📨 询价记录\n\n共 {total} 条\n第 {page + 1} 页", InlineKeyboardMarkup(rows))
 
-
 async def show_status(query):
     total = product_count()
     active = fetchone("SELECT COUNT(*) AS n FROM products WHERE active=1")
@@ -1036,7 +991,6 @@ async def show_status(query):
     )
     await safe_edit(query, text, InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ 管理后台", callback_data="admin")]]))
 
-
 # -------------------- 文本输入 --------------------
 
 def parse_product_line(text):
@@ -1055,7 +1009,6 @@ def parse_product_line(text):
     if stock < 0:
         raise ValueError("库存不能小于0")
     return name, code, category, price, stock, description
-
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
@@ -1221,7 +1174,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("请选择菜单功能。", reply_markup=admin_menu_keyboard())
 
-
 # -------------------- 图片 / 文件 --------------------
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1243,7 +1195,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
     if product:
         await update.effective_chat.send_message("✅ 图片已保存，上传图片消息已尝试自动删除。", reply_markup=admin_product_keyboard(product))
-
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -1306,7 +1257,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             product = product_get(pid)
             clear_state(context)
             await update.effective_chat.send_message("✅ 图片已保存，上传图片消息已尝试自动删除。", reply_markup=admin_product_keyboard(product))
-
 
 async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
     temp_dir = Path(tempfile.mkdtemp(prefix="catalog_zip_", dir=str(UPLOAD_DIR)))
@@ -1427,7 +1377,6 @@ async def process_zip(update: Update, context: ContextTypes.DEFAULT_TYPE, doc):
         except Exception:
             pass
 
-
 # -------------------- Web Server --------------------
 
 class CatalogHandler(BaseHTTPRequestHandler):
@@ -1473,43 +1422,11 @@ class CatalogHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, 500)
 
-  def do_POST(self):
-    parsed = urlparse(self.path)
-
-    # Telegram Webhook
-    if parsed.path == "/telegram":
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-
-            update = Update.de_json(payload, self.server.bot)
-
-            # 把 Telegram 更新交给 python-telegram-bot 的事件循环处理
-            asyncio.run_coroutine_threadsafe(
-                self.server.application.process_update(update),
-                self.server.loop,
-            )
-
-            self.send_json({"ok": True})
-        except Exception as exc:
-            print(f"Telegram Webhook error: {type(exc).__name__}: {exc}")
-            traceback.print_exc()
-            self.send_json({"ok": False, "error": str(exc)}, 500)
-        return
-
-    # Mini App 询价
-    if parsed.path != "/api/inquiry":
-        self.send_json({"ok": False, "error": "Not Found"}, 404)
-        return
-
-    try:
-        length = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(length)
-        payload = json.loads(raw.decode("utf-8")) if raw else {}
-        self.api_inquiry(payload)
-    except Exception as exc:
-        self.send_json({"ok": False, "error": str(exc)}, 400)
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/inquiry":
+            self.send_json({"ok": False, "error": "Not Found"}, 404)
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -1659,26 +1576,12 @@ class CatalogHandler(BaseHTTPRequestHandler):
         threading.Thread(target=notify_admins_sync, args=(notify,), daemon=True).start()
         self.send_json({"ok": True, "inquiry_id": inquiry_id})
 
-
-def start_web_server(application, loop):
+def start_web_server():
     server = ThreadingHTTPServer(("0.0.0.0", PORT), CatalogHandler)
-
-    # 给 Webhook Handler 使用
-    server.application = application
-    server.loop = loop
-    server.bot = application.bot
-
-    thread = threading.Thread(
-        target=server.serve_forever,
-        daemon=True,
-    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-
     print(f"Web server listening on 0.0.0.0:{PORT}")
-    print(f"Telegram webhook: {WEB_URL}/telegram")
-
     return server
-
 
 # -------------------- 启动 --------------------
 
@@ -1690,7 +1593,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     traceback.print_exception(type(error), error, error.__traceback__)
     print("============================================")
 
-
 def startup_import_if_empty():
     try:
         if product_count() == 0:
@@ -1701,13 +1603,12 @@ def startup_import_if_empty():
     except Exception as exc:
         print(f"Startup CSV import skipped/failed: {exc}")
 
-
 def main():
     db_init()
     startup_import_if_empty()
+    start_web_server()
 
     application = Application.builder().token(BOT_TOKEN).build()
-
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("admin", admin_command))
@@ -1722,56 +1623,7 @@ def main():
     print(f"Admins: {ADMIN_IDS}")
     print(f"Database: {'PostgreSQL' if USE_POSTGRES else DB_PATH}")
     print(f"Web URL: {WEB_URL}")
-    print(f"Webhook URL: {WEB_URL}/telegram")
-
-    # 创建 asyncio 事件循环
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    async def startup():
-        await application.initialize()
-        await application.start()
-
-        # 启动现有 Web 服务
-        start_web_server(application, loop)
-
-        # 设置 Telegram Webhook
-        await application.bot.set_webhook(
-            url=f"{WEB_URL}/telegram",
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=False,
-        )
-
-        print("Telegram Webhook 已设置")
-        print(f"Webhook: {WEB_URL}/telegram")
-
-    try:
-        loop.run_until_complete(startup())
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        async def shutdown():
-            try:
-                await application.bot.delete_webhook(drop_pending_updates=False)
-            except Exception:
-                pass
-
-            try:
-                await application.stop()
-            except Exception:
-                pass
-
-            try:
-                await application.shutdown()
-            except Exception:
-                pass
-
-        try:
-            loop.run_until_complete(shutdown())
-        finally:
-            loop.close()
-
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
 
 if __name__ == "__main__":
     main()
