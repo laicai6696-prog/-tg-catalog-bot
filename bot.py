@@ -1660,9 +1660,9 @@ def startup_import_if_empty():
 def main():
     db_init()
     startup_import_if_empty()
-    start_web_server()
 
     application = Application.builder().token(BOT_TOKEN).build()
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("admin", admin_command))
@@ -1677,7 +1677,55 @@ def main():
     print(f"Admins: {ADMIN_IDS}")
     print(f"Database: {'PostgreSQL' if USE_POSTGRES else DB_PATH}")
     print(f"Web URL: {WEB_URL}")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+    print(f"Webhook URL: {WEB_URL}/telegram")
+
+    # 创建 asyncio 事件循环
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def startup():
+        await application.initialize()
+        await application.start()
+
+        # 启动现有 Web 服务
+        start_web_server(application, loop)
+
+        # 设置 Telegram Webhook
+        await application.bot.set_webhook(
+            url=f"{WEB_URL}/telegram",
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=False,
+        )
+
+        print("Telegram Webhook 已设置")
+        print(f"Webhook: {WEB_URL}/telegram")
+
+    try:
+        loop.run_until_complete(startup())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        async def shutdown():
+            try:
+                await application.bot.delete_webhook(drop_pending_updates=False)
+            except Exception:
+                pass
+
+            try:
+                await application.stop()
+            except Exception:
+                pass
+
+            try:
+                await application.shutdown()
+            except Exception:
+                pass
+
+        try:
+            loop.run_until_complete(shutdown())
+        finally:
+            loop.close()
 
 
 if __name__ == "__main__":
