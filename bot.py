@@ -1423,7 +1423,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, 500)
 
-  def do_POST(self):
+def do_POST(self):
     parsed = urlparse(self.path)
 
     # Telegram Webhook
