@@ -1442,49 +1442,24 @@ def do_POST(self):
             )
 
             self.send_json({"ok": True})
-
         except Exception as exc:
-            print(
-                f"Telegram Webhook error: "
-                f"{type(exc).__name__}: {exc}"
-            )
+            print(f"Telegram Webhook error: {type(exc).__name__}: {exc}")
             traceback.print_exc()
-            self.send_json(
-                {"ok": False, "error": str(exc)},
-                500,
-            )
-
+            self.send_json({"ok": False, "error": str(exc)}, 500)
         return
 
     # Mini App 询价
     if parsed.path != "/api/inquiry":
-        self.send_json(
-            {"ok": False, "error": "Not Found"},
-            404,
-        )
+        self.send_json({"ok": False, "error": "Not Found"}, 404)
         return
 
     try:
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length)
         payload = json.loads(raw.decode("utf-8")) if raw else {}
-
         self.api_inquiry(payload)
-
     except Exception as exc:
-        self.send_json(
-            {"ok": False, "error": str(exc)},
-            400,
-        )
-            return
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-            self.api_inquiry(payload)
-        except Exception as exc:
-            self.send_json({"ok": False, "error": str(exc)}, 400)
-
+        self.send_json({"ok": False, "error": str(exc)}, 400)
     def serve_index(self):
         index = WEB_DIR / "index.html"
         if not index.exists():
