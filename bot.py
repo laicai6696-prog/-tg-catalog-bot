@@ -1422,44 +1422,43 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": "Not Found"}, 404)
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, 500)
+    def do_POST(self):
+        parsed = urlparse(self.path)
 
-def do_POST(self):
-    parsed = urlparse(self.path)
+        # Telegram Webhook
+        if parsed.path == "/telegram":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length)
+                payload = json.loads(raw.decode("utf-8")) if raw else {}
 
-    # Telegram Webhook
-    if parsed.path == "/telegram":
+                update = Update.de_json(payload, self.server.bot)
+
+                # 把 Telegram 更新交给 python-telegram-bot 的事件循环处理
+                asyncio.run_coroutine_threadsafe(
+                    self.server.application.process_update(update),
+                    self.server.loop,
+                )
+
+                self.send_json({"ok": True})
+            except Exception as exc:
+                print(f"Telegram Webhook error: {type(exc).__name__}: {exc}")
+                traceback.print_exc()
+                self.send_json({"ok": False, "error": str(exc)}, 500)
+            return
+
+        # Mini App 询价
+        if parsed.path != "/api/inquiry":
+            self.send_json({"ok": False, "error": "Not Found"}, 404)
+            return
+
         try:
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
             payload = json.loads(raw.decode("utf-8")) if raw else {}
-
-            update = Update.de_json(payload, self.server.bot)
-
-            # 把 Telegram 更新交给 python-telegram-bot 的事件循环处理
-            asyncio.run_coroutine_threadsafe(
-                self.server.application.process_update(update),
-                self.server.loop,
-            )
-
-            self.send_json({"ok": True})
+            self.api_inquiry(payload)
         except Exception as exc:
-            print(f"Telegram Webhook error: {type(exc).__name__}: {exc}")
-            traceback.print_exc()
-            self.send_json({"ok": False, "error": str(exc)}, 500)
-        return
-
-    # Mini App 询价
-    if parsed.path != "/api/inquiry":
-        self.send_json({"ok": False, "error": "Not Found"}, 404)
-        return
-
-    try:
-        length = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(length)
-        payload = json.loads(raw.decode("utf-8")) if raw else {}
-        self.api_inquiry(payload)
-    except Exception as exc:
-        self.send_json({"ok": False, "error": str(exc)}, 400)
+            self.send_json({"ok": False, "error": str(exc)}, 400)
     def serve_index(self):
         index = WEB_DIR / "index.html"
         if not index.exists():
