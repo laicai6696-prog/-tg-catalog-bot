@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+import asyncio
 
 from dotenv import load_dotenv
 
@@ -1422,10 +1423,43 @@ class CatalogHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, 500)
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        if parsed.path != "/api/inquiry":
-            self.send_json({"ok": False, "error": "Not Found"}, 404)
+  def do_POST(self):
+    parsed = urlparse(self.path)
+
+    # Telegram Webhook
+    if parsed.path == "/telegram":
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+
+            update = Update.de_json(payload, self.server.bot)
+
+            # 把 Telegram 更新交给 python-telegram-bot 的事件循环处理
+            asyncio.run_coroutine_threadsafe(
+                self.server.application.process_update(update),
+                self.server.loop,
+            )
+
+            self.send_json({"ok": True})
+        except Exception as exc:
+            print(f"Telegram Webhook error: {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            self.send_json({"ok": False, "error": str(exc)}, 500)
+        return
+
+    # Mini App 询价
+    if parsed.path != "/api/inquiry":
+        self.send_json({"ok": False, "error": "Not Found"}, 404)
+        return
+
+    try:
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length)
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        self.api_inquiry(payload)
+    except Exception as exc:
+        self.send_json({"ok": False, "error": str(exc)}, 400)
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -1576,11 +1610,23 @@ class CatalogHandler(BaseHTTPRequestHandler):
         threading.Thread(target=notify_admins_sync, args=(notify,), daemon=True).start()
         self.send_json({"ok": True, "inquiry_id": inquiry_id})
 
-def start_web_server():
+def start_web_server(application, loop):
     server = ThreadingHTTPServer(("0.0.0.0", PORT), CatalogHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+
+    # 给 Webhook Handler 使用
+    server.application = application
+    server.loop = loop
+    server.bot = application.bot
+
+    thread = threading.Thread(
+        target=server.serve_forever,
+        daemon=True,
+    )
     thread.start()
+
     print(f"Web server listening on 0.0.0.0:{PORT}")
+    print(f"Telegram webhook: {WEB_URL}/telegram")
+
     return server
 
 # -------------------- 启动 --------------------
@@ -1606,9 +1652,9 @@ def startup_import_if_empty():
 def main():
     db_init()
     startup_import_if_empty()
-    start_web_server()
 
     application = Application.builder().token(BOT_TOKEN).build()
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("admin", admin_command))
@@ -1623,7 +1669,55 @@ def main():
     print(f"Admins: {ADMIN_IDS}")
     print(f"Database: {'PostgreSQL' if USE_POSTGRES else DB_PATH}")
     print(f"Web URL: {WEB_URL}")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+    print(f"Webhook URL: {WEB_URL}/telegram")
+
+    # 创建 asyncio 事件循环
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def startup():
+        await application.initialize()
+        await application.start()
+
+        # 启动现有 Web 服务
+        start_web_server(application, loop)
+
+        # 设置 Telegram Webhook
+        await application.bot.set_webhook(
+            url=f"{WEB_URL}/telegram",
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=False,
+        )
+
+        print("Telegram Webhook 已设置")
+        print(f"Webhook: {WEB_URL}/telegram")
+
+    try:
+        loop.run_until_complete(startup())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        async def shutdown():
+            try:
+                await application.bot.delete_webhook(drop_pending_updates=False)
+            except Exception:
+                pass
+
+            try:
+                await application.stop()
+            except Exception:
+                pass
+
+            try:
+                await application.shutdown()
+            except Exception:
+                pass
+
+        try:
+            loop.run_until_complete(shutdown())
+        finally:
+            loop.close()
 
 if __name__ == "__main__":
     main()
